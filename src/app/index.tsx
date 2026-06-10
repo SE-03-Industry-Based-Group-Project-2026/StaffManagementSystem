@@ -194,9 +194,9 @@ const styles = StyleSheet.create({
   },
 
   centerEmblemImage: {
-    width: 52,        // රවුම ඇතුලට ලස්සනට ගැලපෙන සයිස් එකක්
+    width: 52,       
     height: 52,
-    borderRadius: 26, // රවුම් හැඩය ආරක්ෂා කර ගැනීමට
+    borderRadius: 26, 
   },
 
   bgTopShine: {
