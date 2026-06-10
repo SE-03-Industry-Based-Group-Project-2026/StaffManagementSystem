@@ -60,7 +60,7 @@ export default function MainLayout({ selectedLang, onResetLang }: MainLayoutProp
       {currentScreen === 'Dashboard' && <DashboardScreen selectedLang={selectedLang} onNavigate={setCurrentScreen} onLogout={handleSystemLogout} />}
       {currentScreen === 'Profile' && <ProfileScreen t={t} onNavigate={setCurrentScreen} onLogout={handleSystemLogout} />}
       {currentScreen === 'EditProfile' && <EditProfileScreen t={t} onBack={() => setCurrentScreen('Profile')} />}
-      {currentScreen === 'LeaveBalance' && <LeaveBalanceScreen t={t} onNavigate={setCurrentScreen} />}
+      {currentScreen === 'LeaveBalance' && <LeaveBalanceScreen selectedLang={selectedLang} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenKey)} />}
       {currentScreen === 'ApplyLeave' && <ApplyLeaveScreen t={t} onSubmit={() => setCurrentScreen('LeaveStatus')} selectedLang={selectedLang} />}
       {currentScreen === 'LeaveStatus' && <LeaveStatusScreen t={t} onNavigate={setCurrentScreen} selectedLang={selectedLang} />}
       {currentScreen === 'DigitalForm' && <DigitalFormScreen t={t} onNavigate={setCurrentScreen} selectedLang={selectedLang} />}
