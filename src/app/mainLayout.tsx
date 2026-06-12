@@ -1,10 +1,8 @@
 // app/mainLayout.tsx
 
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, StatusBar, Alert } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { StyleSheet, View, Alert, StatusBar } from 'react-native';
 
-// Import standalone individual screens from the folder cleanly
 import LoginScreen from './screens/LoginScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import ProfileScreen from './screens/ProfileScreen';
@@ -43,24 +41,30 @@ export default function MainLayout({ selectedLang, onResetLang }: MainLayoutProp
     );
   };
 
-  return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: currentScreen === 'Login' ? '#800020' : '#F8F9FA' }}>
-      {currentScreen !== 'Login' && currentScreen !== 'Dashboard' && (
-        <View style={styles.navBar}>
-          <TouchableOpacity onPress={() => setCurrentScreen('Dashboard')} style={{ padding: 4 }}>
-            <Ionicons name="arrow-back" size={24} color="#333" />
-          </TouchableOpacity>
-          <Text style={styles.navTitle}>Pradeshiya Sabha Portal</Text>
-          <View style={{ width: 24 }} />
-        </View>
-      )}
+  // Dynamic conditions based on active screens
+  const isDarkScreen = currentScreen === 'Login' || currentScreen === 'LeaveBalance' || currentScreen === 'Dashboard';
+  
+  // Set consistent header coloring for Dashboard too
+  const statusBarColor = 
+    currentScreen === 'Login' ? '#800020' : 
+    (currentScreen === 'LeaveBalance' || currentScreen === 'Dashboard' ? '#7A1020' : 'transparent');
+    
+  const appBgColor = currentScreen === 'Login' ? '#800020' : '#F8F9FA';
 
+  return (
+    <View style={{ flex: 1, backgroundColor: appBgColor }}>
+      <StatusBar 
+        backgroundColor={statusBarColor} 
+        barStyle={isDarkScreen ? "light-content" : "dark-content"} 
+        translucent={currentScreen !== 'Login' && currentScreen !== 'LeaveBalance' && currentScreen !== 'Dashboard'} 
+      />
+      
       {/* Screen Router View Switch */}
-      {currentScreen === 'Login' && <LoginScreen t={t} onLogin={() => setCurrentScreen('Dashboard')} onBack={onResetLang} selectedLang={selectedLang} />}       
+      {currentScreen === 'Login' && <LoginScreen t={t} onLogin={() => setCurrentScreen('Dashboard')} onBack={onResetLang} selectedLang={selectedLang} />}      
       {currentScreen === 'Dashboard' && <DashboardScreen selectedLang={selectedLang} onNavigate={setCurrentScreen} onLogout={handleSystemLogout} />}
       {currentScreen === 'Profile' && <ProfileScreen t={t} onNavigate={setCurrentScreen} onLogout={handleSystemLogout} />}
       {currentScreen === 'EditProfile' && <EditProfileScreen t={t} onBack={() => setCurrentScreen('Profile')} />}
-      {currentScreen === 'LeaveBalance' && <LeaveBalanceScreen selectedLang={selectedLang} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenKey)} />}
+      {currentScreen === 'LeaveBalance' && <LeaveBalanceScreen selectedLang={selectedLang} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenKey)} onBack={() => setCurrentScreen('Dashboard')} />}
       {currentScreen === 'ApplyLeave' && <ApplyLeaveScreen t={t} onSubmit={() => setCurrentScreen('LeaveStatus')} selectedLang={selectedLang} />}
       {currentScreen === 'LeaveStatus' && <LeaveStatusScreen t={t} onNavigate={setCurrentScreen} selectedLang={selectedLang} />}
       {currentScreen === 'DigitalForm' && <DigitalFormScreen t={t} onNavigate={setCurrentScreen} selectedLang={selectedLang} />}
@@ -69,11 +73,8 @@ export default function MainLayout({ selectedLang, onResetLang }: MainLayoutProp
       {currentScreen === 'ComplaintStatus' && <ComplaintStatusScreen t={t} selectedLang={selectedLang} />}
       {currentScreen === 'Announcements' && <AnnouncementsScreen t={t} selectedLang={selectedLang} />}
       {currentScreen === 'Notifications' && <NotificationsScreen selectedLang={selectedLang} />}
-    </SafeAreaView>
+    </View>
   );
 }
 
-const styles = StyleSheet.create({
-  navBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#FFF', borderBottomWidth: 1, borderBottomColor: '#EFEFEF', paddingTop: 40 },
-  navTitle: { fontSize: 16, fontWeight: '700', color: '#333' }
-});
+const styles = StyleSheet.create({});
