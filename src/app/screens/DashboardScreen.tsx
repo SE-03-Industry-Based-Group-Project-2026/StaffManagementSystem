@@ -29,14 +29,14 @@ const L = {
     days: ['ඉරිදා','සඳුදා','අඟහරුවාදා','බදාදා','බ්‍රහස්පතින්දා','සිකුරාදා','සෙනසුරාදා'],
     months: ['ජනවාරි','පෙබරවාරි','මාර්තු','අප්‍රේල්','මැයි','ජූනි','ජූලි','අගෝස්තු','සැප්තැම්බර්','ඔක්තෝබර්','නොවැම්බර්','දෙසැම්බර්'],
     menu: [
-      { icon: 'calendar-outline',            label: 'නිවාඩු අයදුම්',   sub: 'ශේෂය, ඉතිහාසය සහ ඉල්ලීම්',    screen: 'LeaveBalance',    color: '#7A1020' },
+      { icon: 'calendar-outline',          label: 'නිවාඩු අයදුම්',   sub: 'ශේෂය, ඉතිහාසය සහ ඉල්ලීම්',    screen: 'LeaveBalance',    color: '#7A1020' },
       { icon: 'chatbubble-ellipses-outline',  label: 'පැමිණිලි',        sub: 'ඉදිරිපත් කිරීම සහ ලුහුබැඳීම',  screen: 'ComplaintSubmit', color: '#1A3A5C' },
-      { icon: 'person-outline',              label: 'මගේ ගිණුම',       sub: 'පැතිකඩ සහ සැකසීම්',            screen: 'Profile',         color: '#1A5C3A' },
+      { icon: 'person-outline',               label: 'මගේ ගිණුම',       sub: 'පැතිකඩ සහ සැකසීම්',            screen: 'Profile',         color: '#1A5C3A' },
     ],
     notices: [
-      { id: '1', title: 'විශේෂ නිවේදනය',   body: 'ලබන සතියේ ප්‍රජා සත්කාරක සේවාවට සියලු කාර්ය මණ්ඩලය සහභාගී විය යුතුය.',              time: 'මිනිත්තු 10 කට පෙර', type: 'urgent'  },
+      { id: '1', title: 'විශේෂ නිවේදනය',    body: 'ලබන සතියේ ප්‍රජා සත්කාරක සේවාවට සියලු කාර්ය මණ්ඩලය සහභාගී විය යුතුය.',              time: 'මිනිත්තු 10 කට පෙර', type: 'urgent'  },
       { id: '2', title: 'නිවාඩු අනුමැතිය', body: 'ඔබ ඉදිරිපත් කළ වෛද්‍ය නිවාඩු අයදුම්පත ප්‍රාදේශීය ලේකම් විසින් අනුමත කරන ලදී.',   time: 'පැය 2 කට පෙර',       type: 'success' },
-      { id: '3', title: 'පද්ධති නඩත්තුව',  body: 'අද රාත්‍රී 11:00 සිට පැය 2ක් පද්ධතිය යාවත්කාලීන කිරීමක් සිදුවේ.',                  time: 'ඊයේ',               type: 'info'    },
+      { id: '3', title: 'පද්ධති නඩත්තුව',  body: 'අද රාත්‍රී 11:00 සිට පැය 2ක් පද්ධතිය යාවත්කාලීන කිරීමක් සිදුවේ.',                  time: 'ඊයේ',                type: 'info'    },
     ],
   },
   en: {
@@ -47,18 +47,18 @@ const L = {
     days: ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'],
     months: ['January','February','March','April','May','June','July','August','September','October','November','December'],
     menu: [
-      { icon: 'calendar-outline',            label: 'Leave Management', sub: 'Balance, history & requests',               screen: 'LeaveBalance',    color: '#7A1020' },
+      { icon: 'calendar-outline',            label: 'Leave Management', sub: 'Balance, history & requests',                screen: 'LeaveBalance',    color: '#7A1020' },
       { icon: 'chatbubble-ellipses-outline',  label: 'Complaints',       sub: 'Submit & track complaints',                 screen: 'ComplaintSubmit', color: '#1A3A5C' },
-      { icon: 'person-outline',              label: 'My Account',       sub: 'Profile & settings',                        screen: 'Profile',         color: '#1A5C3A' },
+      { icon: 'person-outline',               label: 'My Account',       sub: 'Profile & settings',                        screen: 'Profile',         color: '#1A5C3A' },
     ],
     notices: [
-      { id: '1', title: 'Special Notice',     body: 'All staff must participate in the community outreach program next week.',                        time: '10 mins ago', type: 'urgent'  },
+      { id: '1', title: 'Special Notice',     body: 'All staff must participate in the community outreach program next week.',                    time: '10 mins ago', type: 'urgent'  },
       { id: '2', title: 'Leave Approved',     body: 'Your medical leave application has been officially approved by the Secretary.',                  time: '2 hours ago', type: 'success' },
       { id: '3', title: 'System Maintenance', body: 'System will be offline for 2 hours starting tonight at 11:00 PM for updates.',                  time: 'Yesterday',   type: 'info'    },
     ],
   },
   ta: {
-    welcome: 'வரவேற்கிறோம்,', name: 'W.A. பெரேரா',
+    welcome: 'Welcome,', name: 'W.A. பெரேரா',
     dept: 'நிர்வாகம் மற்றும் ஊழியர் பிரிவு', logout: 'வெளியேறவும்',
     liveTitle: 'நேரடி தேதி மற்றும் நேரம்',
     servicesTitle: 'முக்கிய சேவைகள்', updatesTitle: 'அண்மைய அறிவிப்புகள்', viewAll: 'அனைத்தும்',
@@ -67,18 +67,18 @@ const L = {
     menu: [
       { icon: 'calendar-outline',            label: 'விடுமுறை மேலாண்மை', sub: 'இருப்பு, வரலாறு, விண்ணப்பம்',               screen: 'LeaveBalance',    color: '#7A1020' },
       { icon: 'chatbubble-ellipses-outline',  label: 'புகார்கள்',          sub: 'சமர்ப்பிக்கவும் மற்றும் கண்காணிக்கவும்',   screen: 'ComplaintSubmit', color: '#1A3A5C' },
-      { icon: 'person-outline',              label: 'என் கணக்கு',         sub: 'சுயவிவரம் மற்றும் அமைப்புகள்',             screen: 'Profile',         color: '#1A5C3A' },
+      { icon: 'person-outline',               label: 'என் கணக்கு',         sub: 'சுயவிவரம் மற்றும் அமைப்புகள்',             screen: 'Profile',         color: '#1A5C3A' },
     ],
     notices: [
       { id: '1', title: 'அவசர அறிவிப்பு',   body: 'அடுத்த வாரம் சமூக சேவை நிகழ்ச்சியில் அனைத்து ஊழியர்களும் கலந்துகொள்ள வேண்டும்.',  time: '10 நிமிடம் முன்',  type: 'urgent'  },
       { id: '2', title: 'விடுமுறை அனுமதி', body: 'நீங்கள் சமர்ப்பித்த மருத்துவ விடுமுறைக்கு பிரதேச செயலாளர் ஒப்புதல் அளித்தார்.',     time: '2 மணி நேரம் முன்', type: 'success' },
-      { id: '3', title: 'கணினி பராமரிப்பு', body: 'இன்று இரவு 11:00 மணி முதல் 2 மணி நேரம் கணினி பராமரிப்பு நடைபெறும்.',              time: 'நேற்று',           type: 'info'    },
+      { id: '3', title: 'கணினி பராமரிப்பு', body: 'இன்று இரவு 11:00 மணி முதல் 2 மணி நேரம் கணினி பராமரிப்பு நடைபெறும்.',               time: 'நேற்று',           type: 'info'    },
     ],
   },
 };
 
 const TYPE_CFG = {
-  urgent:  { bg: '#FFF0F0', border: '#FFCDD2', dot: '#D32F2F' },
+  urgent:   { bg: '#FFF0F0', border: '#FFCDD2', dot: '#D32F2F' },
   success: { bg: '#F0FFF4', border: '#C8E6C9', dot: '#2E7D32' },
   info:    { bg: '#F0F6FF', border: '#BBDEFB', dot: '#1565C0' },
 };
@@ -131,13 +131,12 @@ export default function DashboardScreen({ selectedLang, onNavigate, onLogout }: 
   return (
     <View style={styles.root}>
 
-      {/* ── HEADER ─────────────────────────────────────────────── */}
+      {/* ── HEADER (Structured exactly like LeaveBalance) ──────── */}
       <Animated.View style={[styles.header, fade(headerAnim)]}>
         <View style={styles.headerCircle1} pointerEvents="none" />
         <View style={styles.headerCircle2} pointerEvents="none" />
 
         <View style={styles.headerInner}>
-          {/* Avatar + Name */}
           <View style={styles.headerLeft}>
             <View style={styles.avatarWrap}>
               <Image
@@ -156,7 +155,6 @@ export default function DashboardScreen({ selectedLang, onNavigate, onLogout }: 
             </View>
           </View>
 
-          {/* Logout */}
           <TouchableOpacity style={styles.logoutBtn} onPress={onLogout} activeOpacity={0.8}>
             <Ionicons name="log-out-outline" size={14} color="#FFD54F" />
             <Text style={styles.logoutText}>{t.logout}</Text>
@@ -177,13 +175,11 @@ export default function DashboardScreen({ selectedLang, onNavigate, onLogout }: 
             <Text style={styles.clockLabelText}> {t.liveTitle}</Text>
           </View>
           <View style={styles.clockGridRow}>
-            {/* Day + Time */}
             <View style={styles.clockGridItem}>
               <Text style={styles.clockDayText}>{dayStr}</Text>
               <Text style={styles.clockTimeText}>{timeStr}</Text>
             </View>
             <View style={styles.clockDivider} />
-            {/* Date */}
             <View style={[styles.clockGridItem, { alignItems: 'flex-start', paddingLeft: 20 }]}>
               <Text style={styles.clockDateText}>{dateStr}</Text>
             </View>
@@ -272,30 +268,28 @@ export default function DashboardScreen({ selectedLang, onNavigate, onLogout }: 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F4F6F9' },
 
-  // Header
+  // Preserved exactly like LeaveBalance structure
   header: {
     backgroundColor: '#7A1020',
-    paddingTop: 54,
-    paddingHorizontal: 22,
+    paddingTop: 54, 
+    paddingHorizontal: 20, 
     paddingBottom: 24,
-    borderBottomLeftRadius: 28,
+    borderBottomLeftRadius: 28, 
     borderBottomRightRadius: 28,
     overflow: 'hidden',
-    shadowColor: '#7A1020',
+    shadowColor: '#5A0010',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 18,
+    shadowOpacity: 0.3, 
+    shadowRadius: 18, 
     elevation: 12,
   },
   headerCircle1: {
-    position: 'absolute', width: 200, height: 200,
-    borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.05)',
-    top: -60, right: -50,
+    position: 'absolute', width: 200, height: 200, borderRadius: 100,
+    backgroundColor: 'rgba(255,255,255,0.05)', top: -50, right: -50,
   },
   headerCircle2: {
-    position: 'absolute', width: 120, height: 120,
-    borderRadius: 60, backgroundColor: 'rgba(255,255,255,0.04)',
-    bottom: -30, left: 20,
+    position: 'absolute', width: 100, height: 100, borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.04)', bottom: -20, left: 20,
   },
   headerInner: {
     flexDirection: 'row',
@@ -328,10 +322,8 @@ const styles = StyleSheet.create({
   },
   logoutText: { color: '#fff', fontSize: 11, fontWeight: '700' },
 
-  // Scroll
-  scrollBody: { paddingHorizontal: 18, paddingTop: 20, paddingBottom: 16 },
+  scrollBody: { paddingHorizontal: 16, paddingTop: 20 },
 
-  // Clock card
   clockCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 20,
@@ -378,7 +370,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#E6EAEF',
   },
 
-  // Section
   sectionHeader: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: 12,
@@ -395,7 +386,6 @@ const styles = StyleSheet.create({
   },
   viewAll: { fontSize: 11, fontWeight: '700', color: '#7A1020' },
 
-  // Menu cards
   menuList: { gap: 10, marginBottom: 26 },
   menuCard: {
     flexDirection: 'row', alignItems: 'center',
@@ -427,7 +417,6 @@ const styles = StyleSheet.create({
     marginRight: 14,
   },
 
-  // Notices
   noticeGroup: { marginBottom: 8 },
   noticeCard: { borderRadius: 14, padding: 14, borderWidth: 1 },
   noticeTop: {
