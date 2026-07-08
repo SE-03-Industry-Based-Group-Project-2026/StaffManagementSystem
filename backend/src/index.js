@@ -1,0 +1,56 @@
+const express = require('express');
+const cors = require('cors');
+require('dotenv').config();
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Middleware - CORS properly configured once
+app.use(cors({
+    origin: 'http://localhost:3000',
+    credentials: true
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Import routes
+const authRoutes = require('./routes/auth');
+const userRoutes = require('./routes/users');
+const leaveRoutes = require('./routes/leave');
+const attendanceRoutes = require('./routes/attendance');
+const complaintRoutes = require('./routes/complaints');
+const announcementRoutes = require('./routes/announcements');
+const notificationRoutes = require('./routes/notifications');
+const reportRoutes = require('./routes/reports');
+const auditRoutes = require('./routes/audit');
+const taskRoutes = require('./routes/tasks');
+
+
+// Use routes
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/leave', leaveRoutes);
+app.use('/api/attendance', attendanceRoutes);
+app.use('/api/complaints', complaintRoutes);
+app.use('/api/announcements', announcementRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/reports', reportRoutes);
+app.use('/api/audit', auditRoutes);
+app.use('/api/tasks', taskRoutes);
+
+
+// Health check
+app.get('/', (req, res) => {
+    res.json({ 
+        message: 'Pradeshiya Sabha Staff Management API',
+        status: 'Running',
+        time: new Date().toISOString()
+    });
+});
+
+// Start server
+app.listen(PORT, () => {
+    console.log(`✅ Server running on port ${PORT}`);
+    console.log(`📍 http://localhost:${PORT}`);
+});
+
