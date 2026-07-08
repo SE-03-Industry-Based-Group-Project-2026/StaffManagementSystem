@@ -1,47 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { useLanguage } from '../context/LanguageContext';
 import Layout from '../components/Layout';
+import AppIcon from '../components/AppIcon';
 import { colors } from '../utils/colors';
 import { showSuccess, showError } from '../services/toastService';
-
-// Professional SVG Icons Components
-const SvgIcon = ({ children, size = 20, color = 'currentColor', strokeWidth = 1.8 }) => (
-  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-    {children}
-  </svg>
-);
-
-const MegaphoneIcon = ({ size = 22, color = 'currentColor' }) => (
-  <SvgIcon size={size} color={color}>
-    <path d="M12 19H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h7l9-4v18l-9-4zM3 12h3M12 5v14" />
-  </SvgIcon>
-);
-
-const PlusIcon = ({ size = 18, color = 'currentColor' }) => (
-  <SvgIcon size={size} color={color}><path d="M12 5v14M5 12h14" /></SvgIcon>
-);
-
-const BarChartIcon = ({ size = 22, color = 'currentColor' }) => (
-  <SvgIcon size={size} color={color}><path d="M3 21h18M7 17V10M12 17V6M17 17v-4" /></SvgIcon>
-);
-
-const CalendarIcon = ({ size = 22, color = 'currentColor' }) => (
-  <SvgIcon size={size} color={color}><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M8 2v4M16 2v4M3 9h18" /></SvgIcon>
-);
-
-const UserIcon = ({ size = 14, color = 'currentColor' }) => (
-  <SvgIcon size={size} color={color}><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" /></SvgIcon>
-);
-
-const BuildingIcon = ({ size = 14, color = 'currentColor' }) => (
-  <SvgIcon size={size} color={color}><rect x="4" y="2" width="16" height="20" rx="2" ry="2" /><path d="M9 22v-4h6v4M8 6h2M14 6h2M8 10h2M14 10h2M8 14h2M14 14h2" /></SvgIcon>
-);
-
-const ClockIcon = ({ size = 14, color = 'currentColor' }) => (
-  <SvgIcon size={size} color={color}><circle cx="12" cy="12" r="10" /><path d="M12 6v6l4 2" /></SvgIcon>
-);
 
 function Announcements() {
   const { t } = useLanguage();
@@ -51,15 +15,21 @@ function Announcements() {
   const [departments, setDepartments] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [selectedAnnouncement, setSelectedAnnouncement] = useState(null);
-  const [isEditing, setIsEditing] = useState(false); // 🔴 සංස්කරණය කරන්නේදැයි බැලීමට
-  
- 
-  const [formData, setFormData] = useState({ title: '', message: '', department_id: '', expires_at: '' });
+  const [isEditing, setIsEditing] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const [formData, setFormData] = useState({
+    title: '',
+    message: '',
+    department_id: '',
+    expires_at: '',
+    priority: 'Medium'
+  });
+
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const role = user.role || user.role_name || 'Admin';
 
   useEffect(() => {
     loadAnnouncements();
@@ -69,12 +39,18 @@ function Announcements() {
   useEffect(() => {
     const openId = location.state?.openId;
     if (!openId || announcements.length === 0) return;
+
     const found = announcements.find((item) => String(item.id) === String(openId));
     if (found) {
       setSelectedAnnouncement(found);
       setShowModal(true);
     }
   }, [location.state, announcements]);
+
+  const tr = (key, fallback) => {
+    const value = t(key);
+    return value && value !== key ? value : fallback;
+  };
 
   const getTranslationKey = (name) => {
     if (!name) return '';
@@ -83,27 +59,42 @@ function Announcements() {
 
   const loadAnnouncements = async () => {
     const now = new Date().toISOString();
-    
-    
-    const { data } = await supabase
+
+    const { data, error } = await supabase
       .from('announcements')
       .select('*, users(full_name), departments(department_name)')
       .or(`expires_at.is.null,expires_at.gt.${now}`)
       .order('created_at', { ascending: false });
+
+    if (error) {
+      showError(error.message);
+      setLoading(false);
+      return;
+    }
 
     setAnnouncements(data || []);
     setLoading(false);
   };
 
   const loadDepartments = async () => {
-    const { data } = await supabase.from('departments').select('*');
+    const { data } = await supabase.from('departments').select('*').order('department_name');
     setDepartments(data || []);
+  };
+
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      message: '',
+      department_id: '',
+      expires_at: '',
+      priority: 'Medium'
+    });
   };
 
   const openCreateModal = () => {
     setSelectedAnnouncement(null);
     setIsEditing(false);
-    setFormData({ title: '', message: '', department_id: '', expires_at: '' });
+    resetForm();
     setShowModal(true);
   };
 
@@ -113,55 +104,62 @@ function Announcements() {
     setShowModal(true);
   };
 
-  
   const openEditModal = (e, announcement) => {
-    e.stopPropagation(); // Card එක click වීම වළක්වයි
+    e.stopPropagation();
+
     if (announcement.created_by !== user.id) {
       showError(t('access_denied_authorized') || 'You do not have permission to edit this announcement.');
       return;
     }
+
     setSelectedAnnouncement(announcement);
     setIsEditing(true);
     setFormData({
-      title: announcement.title,
-      message: announcement.message,
+      title: announcement.title || '',
+      message: announcement.message || '',
       department_id: announcement.department_id || '',
-      expires_at: announcement.expires_at ? announcement.expires_at.slice(0, 16) : ''
+      expires_at: announcement.expires_at ? announcement.expires_at.slice(0, 16) : '',
+      priority: announcement.priority || 'Medium'
     });
     setShowModal(true);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    setSelectedAnnouncement(null);
+    setIsEditing(false);
+    resetForm();
   };
 
   const sendAnnouncement = async (e) => {
     e.preventDefault();
     setSending(true);
 
+    const payload = {
+      title: formData.title.trim(),
+      message: formData.message.trim(),
+      department_id: formData.department_id || null,
+      expires_at: formData.expires_at || null,
+      priority: formData.priority || 'Medium'
+    };
+
     if (isEditing && selectedAnnouncement) {
-     
       const { error } = await supabase
         .from('announcements')
-        .update({
-          title: formData.title,
-          message: formData.message,
-          department_id: formData.department_id || null,
-          expires_at: formData.expires_at || null
-        })
+        .update(payload)
         .eq('id', selectedAnnouncement.id);
 
       if (error) {
         showError(error.message);
       } else {
         showSuccess(t('update_success') || 'Announcement updated successfully');
-        setShowModal(false);
+        closeModal();
         loadAnnouncements();
       }
     } else {
-      // Insert logic: නව නිවේදනයක් ඇතුළත් කිරීම
       const { error } = await supabase.from('announcements').insert([
         {
-          title: formData.title,
-          message: formData.message,
-          department_id: formData.department_id || null,
-          expires_at: formData.expires_at || null,
+          ...payload,
           created_by: user.id
         }
       ]);
@@ -170,12 +168,52 @@ function Announcements() {
         showError(error.message);
       } else {
         showSuccess(t('sent_success'));
-        setShowModal(false);
-        setFormData({ title: '', message: '', department_id: '', expires_at: '' });
+        closeModal();
         loadAnnouncements();
       }
     }
+
     setSending(false);
+  };
+
+  const filteredAnnouncements = useMemo(() => {
+    const keyword = searchTerm.toLowerCase().trim();
+
+    return announcements.filter((ann) => {
+      const deptName = ann.departments?.department_name || '';
+      return (
+        !keyword ||
+        ann.title?.toLowerCase().includes(keyword) ||
+        ann.message?.toLowerCase().includes(keyword) ||
+        deptName.toLowerCase().includes(keyword) ||
+        ann.priority?.toLowerCase().includes(keyword)
+      );
+    });
+  }, [announcements, searchTerm]);
+
+  const stats = useMemo(() => {
+    const today = new Date().toDateString();
+
+    return {
+      total: announcements.length,
+      urgent: announcements.filter((a) => a.priority === 'Urgent').length,
+      scheduled: announcements.filter((a) => a.expires_at).length,
+      publishedToday: announcements.filter((a) => new Date(a.created_at).toDateString() === today).length
+    };
+  }, [announcements]);
+
+  const getPriorityStyle = (priority) => {
+    if (priority === 'Urgent') return { bg: '#fee2e2', color: '#dc2626' };
+    if (priority === 'High') return { bg: '#ffedd5', color: '#f97316' };
+    if (priority === 'Medium') return { bg: '#dbeafe', color: '#2563eb' };
+    return { bg: '#f1f5f9', color: '#64748b' };
+  };
+
+  const translatePriority = (priority) => {
+    if (priority === 'Urgent') return tr('urgent', 'Urgent');
+    if (priority === 'High') return tr('high', 'High');
+    if (priority === 'Medium') return tr('medium', 'Medium');
+    return tr('low', 'Low');
   };
 
   if (loading) {
@@ -193,7 +231,7 @@ function Announcements() {
           <div>
             <h1 style={styles.pageTitle}>
               <span style={styles.titleIconWrap}>
-                <MegaphoneIcon color={colors.primary} size={24} />
+                <AppIcon name="megaphone" size={24} />
               </span>
               {t('announcements')}
             </h1>
@@ -201,126 +239,226 @@ function Announcements() {
           </div>
 
           <button onClick={openCreateModal} style={styles.primaryBtn} type="button">
-            <PlusIcon /> {t('send_announcement')}
+            <AppIcon name="plus" size={18} />
+            {t('send_announcement')}
           </button>
         </div>
 
         <div style={styles.statsRow}>
-          <div style={styles.statCard}>
-            <div style={styles.statIconBox}><BarChartIcon color={colors.textPrimary} /></div>
-            <div>
-              <div style={styles.statValue}>{announcements.length}</div>
-              <div style={styles.statLabel}>{t('total_announcements')}</div>
-            </div>
-          </div>
-
-          <div style={styles.statCard}>
-            <div style={styles.statIconBox}><CalendarIcon color={colors.textPrimary} /></div>
-            <div>
-              <div style={styles.statValue}>
-                {announcements.filter((a) => new Date(a.created_at).toDateString() === new Date().toDateString()).length}
-              </div>
-              <div style={styles.statLabel}>{t('marked_today')}</div>
-            </div>
-          </div>
+          <StatBox icon="megaphone" label={t('total_announcements')} value={stats.total} />
+          <StatBox icon="alert" label={tr('urgent_notices', 'Urgent Notices')} value={stats.urgent} tone="urgent" />
+          <StatBox icon="calendar" label={tr('scheduled_notices', 'Scheduled Notices')} value={stats.scheduled} tone="scheduled" />
+          <StatBox icon="check" label={tr('published_today', 'Published Today')} value={stats.publishedToday} tone="success" />
         </div>
 
         <div style={styles.contentCard}>
           <div style={styles.cardHeader}>
-            <h2 style={styles.cardTitle}>{t('total_announcements_all') || 'Total Announcements'}</h2>
+            <div>
+              <h2 style={styles.cardTitle}>{t('total_announcements_all') || 'Total Announcements'}</h2>
+              <p style={styles.cardSubtitle}>
+                {filteredAnnouncements.length} {tr('records', 'records')}
+              </p>
+            </div>
+
+            <div style={styles.searchWrap}>
+              <AppIcon name="search" size={16} />
+              <input
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder={tr('search_announcements', 'Search announcements')}
+                style={styles.searchInput}
+              />
+            </div>
           </div>
 
           <div style={styles.list}>
-            {announcements.length === 0 ? (
-              <div style={styles.emptyBox}>{t('there_is_nothing_to_display_yet')}</div>
+            {filteredAnnouncements.length === 0 ? (
+              <div style={styles.emptyBox}>
+                <AppIcon name="megaphone" size={38} />
+                <h3>{tr('no_announcements_found', 'No announcements found')}</h3>
+                <p>{tr('adjust_filters', 'Try changing search or filter options')}</p>
+              </div>
             ) : (
-              announcements.map((ann) => (
-                <div key={ann.id} style={styles.announcementItem} onClick={() => openViewModal(ann)}>
-                  <div style={styles.announcementTop}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                      <h3 style={styles.announcementTitle}>{ann.title}</h3>
-                      
-                      {ann.created_by === user.id && (
-                        <button onClick={(e) => openEditModal(e, ann)} style={styles.miniEditBtn} type="button">
-                          {t('edit')}
-                        </button>
-                      )}
+              filteredAnnouncements.map((ann) => {
+                const priorityStyle = getPriorityStyle(ann.priority || 'Medium');
+
+                return (
+                  <div key={ann.id} style={styles.announcementItem} onClick={() => openViewModal(ann)}>
+                    <div style={styles.announcementTop}>
+                      <div style={styles.titleRow}>
+                        <div>
+                          <h3 style={styles.announcementTitle}>{ann.title}</h3>
+
+                          <div style={styles.badgeRow}>
+                            <span style={{ ...styles.priorityBadge, backgroundColor: priorityStyle.bg, color: priorityStyle.color }}>
+                              {translatePriority(ann.priority || 'Medium')}
+                            </span>
+
+                            {ann.expires_at && (
+                              <span style={styles.scheduledBadge}>
+                                {tr('expires', 'Expires')}: {new Date(ann.expires_at).toLocaleString('en-GB')}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {ann.created_by === user.id && (
+                          <button onClick={(e) => openEditModal(e, ann)} style={styles.miniEditBtn} type="button">
+                            {t('edit')}
+                          </button>
+                        )}
+                      </div>
+
+                      <div style={styles.metaRow}>
+                        <span style={styles.metaItem}>
+                          <AppIcon name="users" size={14} /> {ann.users?.full_name || '-'}
+                        </span>
+                        <span style={styles.metaItem}>
+                          <AppIcon name="building" size={14} />
+                          {ann.departments?.department_name
+                            ? tr(getTranslationKey(ann.departments.department_name), ann.departments.department_name)
+                            : t('all_departments')}
+                        </span>
+                        <span style={styles.metaItem}>
+                          <AppIcon name="calendar" size={14} /> {new Date(ann.created_at).toLocaleString('en-GB')}
+                        </span>
+                      </div>
                     </div>
 
-                    <div style={styles.metaRow}>
-                      <span style={styles.metaItem}><UserIcon color={colors.textSecondary} /> {ann.users?.full_name || '-'}</span>
-                      <span style={styles.metaItem}>
-                        <BuildingIcon color={colors.textSecondary} />
-                        {ann.departments?.department_name ? t(getTranslationKey(ann.departments.department_name)) : t('all_departments')}
-                      </span>
-                      <span style={styles.metaItem}><ClockIcon color={colors.textSecondary} /> {new Date(ann.created_at).toLocaleString('en-GB')}</span>
+                    <div style={styles.announcementBody}>
+                      <p style={styles.announcementMessage}>{ann.message}</p>
                     </div>
                   </div>
-
-                  <div style={styles.announcementBody}>
-                    <p style={styles.announcementMessage}>{ann.message}</p>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>
 
         {showModal && (
-          <div style={styles.modalOverlay} onClick={() => setShowModal(false)}>
+          <div style={styles.modalOverlay} onClick={closeModal}>
             <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <h2 style={styles.modalTitle}>
-                  {selectedAnnouncement && !isEditing ? t('announcement_details') : isEditing ? t('edit_announcement') : t('send_announcement')}
+                  {selectedAnnouncement && !isEditing
+                    ? t('announcement_details')
+                    : isEditing
+                    ? t('edit_announcement')
+                    : t('send_announcement')}
                 </h2>
-                <button onClick={() => setShowModal(false)} style={styles.closeBtn}>×</button>
+                <button onClick={closeModal} style={styles.closeBtn}>×</button>
               </div>
 
               {selectedAnnouncement && !isEditing ? (
                 <div style={styles.modalBody}>
-                  <h3 style={styles.announcementTitle}>{selectedAnnouncement.title}</h3>
+                  <div style={styles.modalNoticeHead}>
+                    <h3 style={styles.announcementTitle}>{selectedAnnouncement.title}</h3>
+                    <span
+                      style={{
+                        ...styles.priorityBadge,
+                        backgroundColor: getPriorityStyle(selectedAnnouncement.priority || 'Medium').bg,
+                        color: getPriorityStyle(selectedAnnouncement.priority || 'Medium').color
+                      }}
+                    >
+                      {translatePriority(selectedAnnouncement.priority || 'Medium')}
+                    </span>
+                  </div>
+
                   <div style={styles.metaRow}>
                     <span style={styles.metaItem}>👤 {selectedAnnouncement.users?.full_name || '-'}</span>
-                    <span style={styles.metaItem}>🏢 {selectedAnnouncement.departments?.department_name ? t(getTranslationKey(selectedAnnouncement.departments.department_name)) : t('all_departments')}</span>
+                    <span style={styles.metaItem}>
+                      🏢{' '}
+                      {selectedAnnouncement.departments?.department_name
+                        ? tr(getTranslationKey(selectedAnnouncement.departments.department_name), selectedAnnouncement.departments.department_name)
+                        : t('all_departments')}
+                    </span>
                     <span style={styles.metaItem}>📅 {new Date(selectedAnnouncement.created_at).toLocaleString('en-GB')}</span>
                   </div>
+
+                  {selectedAnnouncement.expires_at && (
+                    <div style={{ marginTop: 12 }}>
+                      <span style={styles.scheduledBadge}>
+                        {tr('expires', 'Expires')}: {new Date(selectedAnnouncement.expires_at).toLocaleString('en-GB')}
+                      </span>
+                    </div>
+                  )}
+
                   <div style={{ ...styles.announcementBody, marginTop: 18 }}>
                     <p style={styles.announcementMessage}>{selectedAnnouncement.message}</p>
                   </div>
+
                   <div style={styles.modalActions}>
-                    <button type="button" onClick={() => setShowModal(false)} style={styles.secondaryBtn}>{t('cancel')}</button>
+                    <button type="button" onClick={closeModal} style={styles.secondaryBtn}>{t('cancel')}</button>
                   </div>
                 </div>
               ) : (
                 <form onSubmit={sendAnnouncement} style={styles.modalBody}>
                   <div style={styles.formGroup}>
                     <label style={styles.label}>{t('name_title')} *</label>
-                    <input type="text" placeholder={t('name_title')} required value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} style={styles.input} />
+                    <input
+                      type="text"
+                      placeholder={t('name_title')}
+                      required
+                      value={formData.title}
+                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                      style={styles.input}
+                    />
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>{tr('priority', 'Priority')}</label>
+                    <select
+                      value={formData.priority}
+                      onChange={(e) => setFormData({ ...formData, priority: e.target.value })}
+                      style={styles.select}
+                    >
+                      <option value="Low">{tr('low', 'Low')}</option>
+                      <option value="Medium">{tr('medium', 'Medium')}</option>
+                      <option value="High">{tr('high', 'High')}</option>
+                      <option value="Urgent">{tr('urgent', 'Urgent')}</option>
+                    </select>
                   </div>
 
                   <div style={styles.formGroup}>
                     <label style={styles.label}>{t('department')}</label>
-                    <select value={formData.department_id} onChange={(e) => setFormData({ ...formData, department_id: e.target.value })} style={styles.select}>
+                    <select
+                      value={formData.department_id}
+                      onChange={(e) => setFormData({ ...formData, department_id: e.target.value })}
+                      style={styles.select}
+                    >
                       <option value="">{t('all_departments')}</option>
                       {departments.map((dept) => (
-                        <option key={dept.id} value={dept.id}>{t(getTranslationKey(dept.department_name))}</option>
+                        <option key={dept.id} value={dept.id}>
+                          {tr(getTranslationKey(dept.department_name), dept.department_name)}
+                        </option>
                       ))}
                     </select>
                   </div>
 
-            
                   <div style={styles.formGroup}>
                     <label style={styles.label}>{t('expire_time') || 'Expiry Date & Time'}</label>
-                    <input type="datetime-local" value={formData.expires_at} onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })} style={styles.input} />
+                    <input
+                      type="datetime-local"
+                      value={formData.expires_at}
+                      onChange={(e) => setFormData({ ...formData, expires_at: e.target.value })}
+                      style={styles.input}
+                    />
                   </div>
 
                   <div style={styles.formGroup}>
                     <label style={styles.label}>{t('description')} *</label>
-                    <textarea placeholder={t('description')} rows="5" required value={formData.message} onChange={(e) => setFormData({ ...formData, message: e.target.value })} style={styles.textarea} />
+                    <textarea
+                      placeholder={t('description')}
+                      rows="5"
+                      required
+                      value={formData.message}
+                      onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                      style={styles.textarea}
+                    />
                   </div>
 
                   <div style={styles.modalActions}>
-                    <button type="button" onClick={() => setShowModal(false)} style={styles.secondaryBtn}>{t('cancel')}</button>
+                    <button type="button" onClick={closeModal} style={styles.secondaryBtn}>{t('cancel')}</button>
                     <button type="submit" disabled={sending} style={styles.primaryBtn}>
                       {sending ? t('loading') : isEditing ? t('update') : t('add')}
                     </button>
@@ -335,45 +473,313 @@ function Announcements() {
   );
 }
 
+function StatBox({ icon, label, value, tone = 'default' }) {
+  const toneMap = {
+    default: { bg: 'var(--gray-100)', color: colors.primary },
+    urgent: { bg: '#fee2e2', color: '#dc2626' },
+    scheduled: { bg: '#dbeafe', color: '#2563eb' },
+    success: { bg: '#dcfce7', color: '#16a34a' }
+  };
+
+  const selected = toneMap[tone] || toneMap.default;
+
+  return (
+    <div style={styles.statCard}>
+      <div style={{ ...styles.statIconBox, backgroundColor: selected.bg, color: selected.color }}>
+        <AppIcon name={icon} size={22} />
+      </div>
+      <div>
+        <div style={styles.statValue}>{value}</div>
+        <div style={styles.statLabel}>{label}</div>
+      </div>
+    </div>
+  );
+}
+
 const styles = {
   container: { padding: 0, backgroundColor: 'var(--bg-primary)', minHeight: '100vh' },
-  pageHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, padding: 24, backgroundColor: 'var(--bg-secondary)', borderRadius: 12, border: '1px solid var(--border)' },
-  pageTitle: { fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: 12 },
-  titleIconWrap: { width: 42, height: 42, borderRadius: 10, backgroundColor: 'var(--primary-soft)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  breadcrumb: { fontSize: 14, color: 'var(--text-secondary)', margin: 0 },
-  primaryBtn: { padding: '12px 24px', backgroundColor: colors.primary, color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 },
-  secondaryBtn: { padding: '12px 24px', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' },
-  miniEditBtn: { padding: '4px 10px', backgroundColor: 'var(--primary-soft)', color: colors.primary, border: 'none', borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer' },
-  statsRow: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20, marginBottom: 24, padding: '0 24px' },
-  statCard: { backgroundColor: 'var(--bg-secondary)', padding: 20, borderRadius: 12, display: 'flex', alignItems: 'center', gap: 16, border: '1px solid var(--border)' },
-  statIconBox: { width: 56, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'var(--gray-100)', borderRadius: 10 },
-  statValue: { fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' },
-  statLabel: { fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 },
-  contentCard: { backgroundColor: 'var(--bg-secondary)', borderRadius: 12, margin: '0 24px', border: '1px solid var(--border)' },
-  cardHeader: { padding: '20px 24px', borderBottom: '1px solid var(--border)' },
-  cardTitle: { fontSize: 18, fontWeight: 600, color: 'var(--text-primary)', margin: 0 },
+  pageHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 24,
+    padding: 24,
+    backgroundColor: 'var(--bg-secondary)',
+    borderRadius: 12,
+    border: '1px solid var(--border)'
+  },
+  pageTitle: {
+    fontSize: 28,
+    fontWeight: 700,
+    color: 'var(--text)',
+    margin: '0 0 8px 0',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12
+  },
+  titleIconWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 10,
+    backgroundColor: 'var(--primary-soft)',
+    color: 'var(--primary)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  breadcrumb: { fontSize: 14, color: 'var(--muted)', margin: 0 },
+  primaryBtn: {
+    padding: '12px 24px',
+    backgroundColor: colors.primary,
+    color: '#fff',
+    border: 'none',
+    borderRadius: 8,
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    justifyContent: 'center'
+  },
+  secondaryBtn: {
+    padding: '12px 24px',
+    backgroundColor: 'var(--bg-secondary)',
+    color: 'var(--text)',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: 'pointer'
+  },
+  miniEditBtn: {
+    padding: '6px 12px',
+    backgroundColor: 'var(--primary-soft)',
+    color: colors.primary,
+    border: 'none',
+    borderRadius: 6,
+    fontSize: 12,
+    fontWeight: 700,
+    cursor: 'pointer'
+  },
+  statsRow: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+    gap: 20,
+    marginBottom: 24,
+    padding: '0 24px'
+  },
+  statCard: {
+    backgroundColor: 'var(--bg-secondary)',
+    padding: 20,
+    borderRadius: 12,
+    display: 'flex',
+    alignItems: 'center',
+    gap: 16,
+    border: '1px solid var(--border)'
+  },
+  statIconBox: {
+    width: 56,
+    height: 56,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10
+  },
+  statValue: { fontSize: 24, fontWeight: 700, color: 'var(--text)' },
+  statLabel: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
+  contentCard: {
+    backgroundColor: 'var(--bg-secondary)',
+    borderRadius: 12,
+    margin: '0 24px',
+    border: '1px solid var(--border)'
+  },
+  cardHeader: {
+    padding: '20px 24px',
+    borderBottom: '1px solid var(--border)',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 16,
+    flexWrap: 'wrap'
+  },
+  cardTitle: { fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: 0 },
+  cardSubtitle: { margin: '4px 0 0', color: 'var(--muted)', fontSize: 13 },
+  searchWrap: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '9px 12px',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    backgroundColor: 'var(--bg-primary)',
+    minWidth: 260
+  },
+  searchInput: {
+    border: 'none',
+    outline: 'none',
+    background: 'transparent',
+    color: 'var(--text)',
+    width: '100%',
+    fontSize: 14
+  },
   list: { padding: 16, display: 'flex', flexDirection: 'column', gap: 16 },
-  announcementItem: { padding: 20, backgroundColor: 'var(--gray-50)', borderRadius: 10, border: '1px solid var(--border)', cursor: 'pointer' },
+  announcementItem: {
+    padding: 20,
+    backgroundColor: 'var(--gray-50)',
+    borderRadius: 12,
+    border: '1px solid var(--border)',
+    cursor: 'pointer'
+  },
   announcementTop: { marginBottom: 12 },
-  announcementTitle: { fontSize: 18, fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 8px 0' },
-  metaRow: { display: 'flex', flexWrap: 'wrap', gap: 16, fontSize: 13, color: 'var(--text-secondary)' },
+  titleRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: 16,
+    alignItems: 'flex-start'
+  },
+  announcementTitle: {
+    fontSize: 18,
+    fontWeight: 700,
+    color: 'var(--text)',
+    margin: '0 0 8px 0'
+  },
+  badgeRow: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 },
+  priorityBadge: {
+    padding: '5px 10px',
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 800,
+    display: 'inline-block'
+  },
+  scheduledBadge: {
+    padding: '5px 10px',
+    borderRadius: 999,
+    fontSize: 12,
+    fontWeight: 700,
+    backgroundColor: '#dbeafe',
+    color: '#2563eb',
+    display: 'inline-block'
+  },
+  metaRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: 16,
+    fontSize: 13,
+    color: 'var(--muted)',
+    marginTop: 10
+  },
   metaItem: { display: 'flex', alignItems: 'center', gap: 6 },
   announcementBody: { paddingTop: 12, borderTop: '1px solid var(--border)' },
-  announcementMessage: { fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.6, margin: 0 },
-  emptyBox: { padding: 24, textAlign: 'center', color: 'var(--text-secondary)' },
-  modalOverlay: { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: 20 },
-  modalBox: { backgroundColor: 'var(--card)', borderRadius: 12, width: '100%', maxWidth: 600, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' },
-  modalHeader: { padding: 24, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  modalTitle: { fontSize: 20, fontWeight: 600, color: 'var(--text-primary)', margin: 0 },
-  closeBtn: { width: 32, height: 32, borderRadius: 6, border: 'none', backgroundColor: 'var(--gray-100)', color: 'var(--text-secondary)', fontSize: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  announcementMessage: {
+    fontSize: 14,
+    color: 'var(--muted)',
+    lineHeight: 1.6,
+    margin: 0,
+    whiteSpace: 'pre-wrap'
+  },
+  emptyBox: {
+    padding: 46,
+    textAlign: 'center',
+    color: 'var(--muted)'
+  },
+  modalOverlay: {
+    position: 'fixed',
+    inset: 0,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+    padding: 20
+  },
+  modalBox: {
+    backgroundColor: 'var(--card)',
+    borderRadius: 12,
+    width: '100%',
+    maxWidth: 620,
+    maxHeight: '90vh',
+    overflow: 'auto',
+    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
+  },
+  modalHeader: {
+    padding: 24,
+    borderBottom: '1px solid var(--border)',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center'
+  },
+  modalTitle: { fontSize: 20, fontWeight: 700, color: 'var(--text)', margin: 0 },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
+    border: 'none',
+    backgroundColor: 'var(--gray-100)',
+    color: 'var(--muted)',
+    fontSize: 18,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
   modalBody: { padding: 24 },
+  modalNoticeHead: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    gap: 16,
+    alignItems: 'flex-start'
+  },
   formGroup: { marginBottom: 20 },
-  label: { display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 },
-  input: { width: '100%', padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, color: 'var(--text-primary)', boxSizing: 'border-box', backgroundColor: 'var(--gray-50)' },
-  select: { width: '100%', padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, color: 'var(--text-primary)', boxSizing: 'border-box', backgroundColor: 'var(--gray-50)', cursor: 'pointer' },
-  textarea: { width: '100%', padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, color: 'var(--text-primary)', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical', backgroundColor: 'var(--gray-50)' },
+  label: {
+    display: 'block',
+    fontSize: 14,
+    fontWeight: 600,
+    color: 'var(--text)',
+    marginBottom: 8
+  },
+  input: {
+    width: '100%',
+    padding: '12px 16px',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    fontSize: 14,
+    color: 'var(--text)',
+    boxSizing: 'border-box',
+    backgroundColor: 'var(--gray-50)'
+  },
+  select: {
+    width: '100%',
+    padding: '12px 16px',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    fontSize: 14,
+    color: 'var(--text)',
+    boxSizing: 'border-box',
+    backgroundColor: 'var(--gray-50)',
+    cursor: 'pointer'
+  },
+  textarea: {
+    width: '100%',
+    padding: '12px 16px',
+    border: '1px solid var(--border)',
+    borderRadius: 8,
+    fontSize: 14,
+    color: 'var(--text)',
+    boxSizing: 'border-box',
+    fontFamily: 'inherit',
+    resize: 'vertical',
+    backgroundColor: 'var(--gray-50)'
+  },
   modalActions: { display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 },
-  loading: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', fontSize: 16, color: 'var(--text-secondary)' }
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '100vh',
+    fontSize: 16,
+    color: 'var(--muted)'
+  }
 };
 
 export default Announcements;

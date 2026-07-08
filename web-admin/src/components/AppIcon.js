@@ -19,7 +19,9 @@ const paths = {
   x: "M18.3 5.7 12 12l6.3 6.3-1.4 1.4L10.6 13.4 4.3 19.7 2.9 18.3 9.2 12 2.9 5.7 4.3 4.3l6.3 6.3 6.3-6.3 1.4 1.4Z",
   plus: "M19 11h-6V5h-2v6H5v2h6v6h2v-6h6v-2Z",
   logout: "M10 17v-2h4V9h-4V7h6v10h-6Zm-1-4H2v-2h7V8l4 4-4 4v-3Z",
-  note: "M4 4h16v14H7l-3 3V4Zm4 4v2h8V8H8Zm0 4v2h6v-2H8Z"
+  note: "M4 4h16v14H7l-3 3V4Zm4 4v2h8V8H8Zm0 4v2h6v-2H8Z",
+  edit: "M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25Zm17.71-10.04a1.003 1.003 0 0 0 0-1.42L18.21 3.29a1.003 1.003 0 0 0-1.42 0l-1.83 1.83 3.75 3.75 2-1.66Z",
+ trash: "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12ZM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4Z",
 };
 
 export default function AppIcon({ name='dashboard', size=20, className='', style }) {

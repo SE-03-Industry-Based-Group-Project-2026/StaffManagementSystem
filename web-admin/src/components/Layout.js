@@ -1,12 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useLanguage } from '../context/LanguageContext';
 import { supabase } from '../services/supabase';
 import AppIcon from './AppIcon';
 import pradeshiyaLogo from '../assets/pradeshiya-logo.png';
 import govEmblem from '../assets/gov-emblem.png';
-import { applyTheme } from '../utils/colors';
 import '../styles/pro-admin.css';
 
 function Layout({ children }) {
@@ -14,17 +13,104 @@ function Layout({ children }) {
   const location = useLocation();
   const { t, language, setLanguage } = useLanguage();
 
-  
-  const [staffMenuOpen, setStaffMenuOpen] = useState(() => ['/staff', '/profile-requests'].includes(location.pathname));
-  const [leaveMenuOpen, setLeaveMenuOpen] = useState(() => ['/leave-requests', '/leave-types', '/my-leave'].includes(location.pathname));
+  const [staffMenuOpen, setStaffMenuOpen] = useState(() =>
+    ['/staff', '/profile-requests'].includes(location.pathname)
+  );
+  const [leaveMenuOpen, setLeaveMenuOpen] = useState(() =>
+    ['/leave-requests', '/leave-types', '/my-leave'].includes(location.pathname)
+  );
+
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
 
   const user = (() => {
-    try { return JSON.parse(localStorage.getItem('user') || '{}'); } 
-    catch { return {}; }
+    try {
+      return JSON.parse(localStorage.getItem('user') || '{}');
+    } catch {
+      return {};
+    }
   })();
 
   const role = user.role || user.role_name || 'Admin';
+  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
+  const tr = (key, fallback) => {
+    const value = t(key);
+    return value && value !== key ? value : fallback;
+  };
+
+  const loadNotifications = async () => {
+    if (!user?.id) return;
+
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (!error) {
+      setNotifications(data || []);
+    }
+  };
+
+  useEffect(() => {
+    loadNotifications();
+
+    const interval = setInterval(() => {
+      loadNotifications();
+    }, 30000);
+
+    const channel = supabase
+      .channel(`notifications-${user?.id || 'guest'}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: user?.id ? `user_id=eq.${user.id}` : undefined
+        },
+        () => {
+          loadNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+
+  const markNotificationRead = async (notification) => {
+    await supabase
+      .from('notifications')
+      .update({
+        is_read: true,
+        read_at: new Date().toISOString()
+      })
+      .eq('id', notification.id);
+
+    setShowNotifications(false);
+    loadNotifications();
+  };
+
+  const markAllNotificationsRead = async () => {
+    if (!user?.id) return;
+
+    await supabase
+      .from('notifications')
+      .update({
+        is_read: true,
+        read_at: new Date().toISOString()
+      })
+      .eq('user_id', user.id)
+      .eq('is_read', false);
+
+    loadNotifications();
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -35,31 +121,57 @@ function Layout({ children }) {
 
   function getRoleText(roleName, t) {
     if (!t || typeof t !== 'function') return roleName;
-    const roles = { 'Praja Officer': 'praja_officer', 'Admin': 'admin', 'Secretary': 'secretary', 'Chairman': 'chairman' };
+    const roles = {
+      'Praja Officer': 'praja_officer',
+      Admin: 'admin',
+      Secretary: 'secretary',
+      Chairman: 'chairman'
+    };
     return roles[roleName] ? t(roles[roleName]) : roleName;
   }
 
+  const getNotificationIcon = (n) => {
+    const type = String(n.notification_type || n.related_entity || '').toLowerCase();
+
+    if (type.includes('leave')) return 'clipboard';
+    if (type.includes('complaint')) return 'alert';
+    if (type.includes('task')) return 'clipboard';
+    if (type.includes('announcement')) return 'megaphone';
+    return 'bell';
+  };
+
+  const getNotificationColor = (n) => {
+    const type = String(n.notification_type || n.related_entity || '').toLowerCase();
+
+    if (type.includes('leave')) return { bg: '#dbeafe', color: '#2563eb' };
+    if (type.includes('complaint')) return { bg: '#ffedd5', color: '#f97316' };
+    if (type.includes('task')) return { bg: '#dcfce7', color: '#16a34a' };
+    if (type.includes('announcement')) return { bg: '#f3e8ff', color: '#9333ea' };
+    return { bg: '#f1f5f9', color: '#64748b' };
+  };
 
   return (
     <div className="pro-layout" style={{ backgroundColor: 'var(--bg-primary)' }}>
-      
-<img 
-  src={pradeshiyaLogo} 
-  alt="Watermark" 
-  style={{
-    position: 'fixed',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    width: '300px',
-    opacity: 0.06,
-    zIndex: 0,
-    pointerEvents: 'none'
-  }}
-/>
+      <img
+        src={pradeshiyaLogo}
+        alt="Watermark"
+        style={{
+          position: 'fixed',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: '300px',
+          opacity: 0.06,
+          zIndex: 0,
+          pointerEvents: 'none'
+        }}
+      />
+
       <aside className="pro-sidebar">
         <div className="pro-brand">
-          <div className="pro-logo-img-wrap"><img src={pradeshiyaLogo} alt="Logo" className="pro-logo-img" /></div>
+          <div className="pro-logo-img-wrap">
+            <img src={pradeshiyaLogo} alt="Logo" className="pro-logo-img" />
+          </div>
           <div>
             <h2>{t('app_name') || 'Pradeshiya Sabha'}</h2>
             <p>{t('administrative_console')}</p>
@@ -73,14 +185,23 @@ function Layout({ children }) {
 
           {role === 'Admin' && (
             <div className="menu-group">
-              <button type="button" className={['/staff', '/profile-requests'].includes(location.pathname) ? 'group-title active-group' : 'group-title'} onClick={() => setStaffMenuOpen(!staffMenuOpen)}>
+              <button
+                type="button"
+                className={['/staff', '/profile-requests'].includes(location.pathname) ? 'group-title active-group' : 'group-title'}
+                onClick={() => setStaffMenuOpen(!staffMenuOpen)}
+              >
                 <AppIcon name="users" size={19} /> <span>{t('staff_management')}</span>
                 <span style={{ marginLeft: 'auto', fontSize: '10px' }}>{staffMenuOpen ? '▼' : '►'}</span>
               </button>
+
               {staffMenuOpen && (
                 <div className="sub-menu" style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column' }}>
-                  <button className={location.pathname === '/staff' ? 'active' : ''} onClick={() => navigate('/staff')} type="button">{t('staff_list')}</button>
-                  <button className={location.pathname === '/profile-requests' ? 'active' : ''} onClick={() => navigate('/profile-requests')} type="button">{t('profile_requests')}</button>
+                  <button className={location.pathname === '/staff' ? 'active' : ''} onClick={() => navigate('/staff')} type="button">
+                    {t('staff_list')}
+                  </button>
+                  <button className={location.pathname === '/profile-requests' ? 'active' : ''} onClick={() => navigate('/profile-requests')} type="button">
+                    {t('profile_requests')}
+                  </button>
                 </div>
               )}
             </div>
@@ -93,14 +214,25 @@ function Layout({ children }) {
           )}
 
           <div className="menu-group">
-            <button type="button" className={['/leave-requests', '/leave-types', '/my-leave'].includes(location.pathname) ? 'group-title active-group' : 'group-title'} onClick={() => setLeaveMenuOpen(!leaveMenuOpen)}>
+            <button
+              type="button"
+              className={['/leave-requests', '/leave-types', '/my-leave'].includes(location.pathname) ? 'group-title active-group' : 'group-title'}
+              onClick={() => setLeaveMenuOpen(!leaveMenuOpen)}
+            >
               <AppIcon name="clipboard" size={19} /> <span>{t('leave_management')}</span>
               <span style={{ marginLeft: 'auto', fontSize: '10px' }}>{leaveMenuOpen ? '▼' : '►'}</span>
             </button>
+
             {leaveMenuOpen && (
               <div className="sub-menu" style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column' }}>
-                <button className={location.pathname.includes('leave') ? 'active' : ''} onClick={() => navigate(role === 'Staff' ? '/my-leave' : '/leave-requests')} type="button">{t('leave_requests')}</button>
-                {role === 'Admin' && <button className={location.pathname === '/leave-types' ? 'active' : ''} onClick={() => navigate('/leave-types')} type="button">{t('leave_types')}</button>}
+                <button className={location.pathname.includes('leave') ? 'active' : ''} onClick={() => navigate(role === 'Staff' ? '/my-leave' : '/leave-requests')} type="button">
+                  {t('leave_requests')}
+                </button>
+                {role === 'Admin' && (
+                  <button className={location.pathname === '/leave-types' ? 'active' : ''} onClick={() => navigate('/leave-types')} type="button">
+                    {t('leave_types')}
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -109,7 +241,6 @@ function Layout({ children }) {
             <AppIcon name="check" size={19} /> <span>{t('attendance')}</span>
           </button>
 
-          
           <button className={location.pathname === '/announcements' ? 'active' : ''} onClick={() => navigate('/announcements')} type="button">
             <AppIcon name="megaphone" size={19} /> <span>{t('announcements')}</span>
           </button>
@@ -120,6 +251,10 @@ function Layout({ children }) {
 
           <button className={location.pathname === '/reports' ? 'active' : ''} onClick={() => navigate('/reports')} type="button">
             <AppIcon name="report" size={19} /> <span>{t('reports')}</span>
+          </button>
+
+          <button className={location.pathname === '/tasks' ? 'active' : ''} onClick={() => navigate('/tasks')} type="button">
+            <AppIcon name="clipboard" size={19} /> <span>{t('task_allocation')}</span>
           </button>
 
           {role === 'Admin' && (
@@ -142,28 +277,114 @@ function Layout({ children }) {
             <img src={govEmblem} alt="Emblem" className="pro-emblem" />
             <div>
               <div className="pro-kicker">{t('civic_governance_system')}</div>
-              <h1>{getRoleText(role, t)} {t('workspace')}</h1>
+              <h1>
+                {getRoleText(role, t)} {t('workspace')}
+              </h1>
             </div>
           </div>
-          <div className="pro-topbar-actions">
+
+          <div className="pro-topbar-actions" style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div className="notification-wrap">
+              <button
+                className="btn btn-soft notification-btn"
+                type="button"
+                onClick={() => setShowNotifications(!showNotifications)}
+                title={tr('notifications', 'Notifications')}
+              >
+                <AppIcon name="bell" size={18} />
+                {unreadCount > 0 && <span className="notification-badge">{unreadCount}</span>}
+              </button>
+
+              {showNotifications && (
+                <div className="notification-dropdown">
+                  <div className="notification-head">
+                    <strong>{tr('notifications', 'Notifications')}</strong>
+
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      {unreadCount > 0 && (
+                        <button type="button" onClick={markAllNotificationsRead}>
+                          {tr('mark_all_read', 'Mark all read')}
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setShowNotifications(false)}
+                        style={{
+                          border: 'none',
+                          background: 'transparent',
+                          cursor: 'pointer',
+                          fontSize: '16px',
+                          fontWeight: 'bold'
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+
+                  {notifications.length === 0 ? (
+                    <div className="notification-empty">{tr('no_notifications', 'No notifications')}</div>
+                  ) : (
+                    notifications.map((n) => {
+                      const color = getNotificationColor(n);
+
+                      return (
+                        <button
+                          key={n.id}
+                          type="button"
+                          className={`notification-item ${!n.is_read ? 'unread' : ''}`}
+                          onClick={() => markNotificationRead(n)}
+                        >
+                          <span
+                            style={{
+                              minWidth: 34,
+                              height: 34,
+                              borderRadius: 10,
+                              backgroundColor: color.bg,
+                              color: color.color,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            <AppIcon name={getNotificationIcon(n)} size={17} />
+                          </span>
+
+                          <div style={{ flex: 1 }}>
+                            <strong>{n.title}</strong>
+                            <p>{n.message}</p>
+                            <small>{n.created_at ? new Date(n.created_at).toLocaleString() : ''}</small>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+
             <select className="pro-lang" value={language} onChange={(e) => setLanguage(e.target.value)}>
-              <option value="en">English</option><option value="si">සිංහල</option><option value="ta">தமிழ்</option>
+              <option value="en">English</option>
+              <option value="si">සිංහල</option>
+              <option value="ta">தமிழ்</option>
             </select>
           </div>
         </header>
 
-       <motion.section 
-  className="pro-content" 
-  key={location.pathname}
-  initial={{ opacity: 0, x: 20 }} 
-  animate={{ opacity: 1, x: 0 }}
-  exit={{ opacity: 0, x: -20 }}
-  transition={{ duration: 0.25, ease: "easeInOut" }}
->
-  {children}
-</motion.section>
+        <motion.section
+          className="pro-content"
+          key={location.pathname}
+          initial={{ opacity: 0, x: 20 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -20 }}
+          transition={{ duration: 0.25, ease: 'easeInOut' }}
+        >
+          {children}
+        </motion.section>
       </main>
     </div>
   );
 }
+
 export default Layout;

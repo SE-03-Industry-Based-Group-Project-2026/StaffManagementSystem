@@ -342,3 +342,119 @@ input:focus,select:focus,textarea:focus{background-image: linear-gradient(90deg,
   --gray-100: #334155;
   --primary-soft: #311013;
 }
+.notification-wrap {
+  position: relative;
+}
+
+.notification-btn {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notification-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #dc2626;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.notification-dropdown {
+  position: absolute;
+  right: 0;
+  top: 48px;
+  width: 360px;
+  max-height: 430px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.18);
+  z-index: 9999;
+}
+
+.notification-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.notification-head button {
+  border: none;
+  background: transparent;
+  color: #9b111e;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.notification-item {
+  width: 100%;
+  border: none;
+  background: #fff;
+  text-align: left;
+  padding: 13px 16px;
+  border-bottom: 1px solid #eef2f7;
+  cursor: pointer;
+}
+
+.notification-item:hover {
+  background: #f8fafc;
+}
+
+.notification-item.unread {
+  background: #fff1f2;
+}
+
+.notification-item strong {
+  display: block;
+  color: #0f172a;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.notification-item p {
+  color: #64748b;
+  font-size: 13px;
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+
+.notification-item small {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.notification-empty {
+  padding: 24px;
+  text-align: center;
+  color: #64748b;
+}
+.notification-item {
+  width: 100%;
+  border: none;
+  background: #fff;
+  text-align: left;
+  padding: 13px 16px;
+  border-bottom: 1px solid #eef2f7;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}

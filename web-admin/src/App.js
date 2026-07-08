@@ -18,6 +18,7 @@ import Notifications from './pages/Notifications';
 import Reports from './pages/Reports';
 import AuditLogs from './pages/AuditLogs';
 import ProfileRequests from './pages/ProfileRequests';
+import TaskAllocation from './pages/TaskAllocation';
 
 function getUser() {
   try {
@@ -72,6 +73,14 @@ function App() {
             }
           />
 
+          <Route
+                      path="/tasks"
+            element={
+              <ProtectedRoute allowedRoles={allOfficerRoles}>
+                <TaskAllocation />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/staff"
             element={
