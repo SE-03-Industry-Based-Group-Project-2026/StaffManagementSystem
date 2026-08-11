@@ -39,11 +39,24 @@ export function EmptyState({ icon='search', title='No data found', text='There i
   );
 }
 
-export function statusBadge(status) {
-  const s = String(status || '').toLowerCase();
-  let cls = 'badge-neutral';
-  if (s.includes('approved') || s.includes('active') || s.includes('resolved') || s.includes('present')) cls = 'badge-success';
-  if (s.includes('pending') || s.includes('progress') || s.includes('late') || s.includes('admin')) cls = 'badge-warning';
-  if (s.includes('reject') || s.includes('inactive') || s.includes('open') || s.includes('absent')) cls = 'badge-danger';
-  return <span className={`badge ${cls}`}>{status || 'N/A'}</span>;
-}
+export const statusBadge = (status, displayText = status) => {
+  const normalized = String(status || '').toLowerCase();
+
+  let className = 'badge-neutral';
+
+  if (normalized === 'open') {
+    className = 'badge-danger';
+  } else if (normalized === 'in progress') {
+    className = 'badge-warning';
+  } else if (normalized === 'resolved') {
+    className = 'badge-success';
+  } else if (normalized === 'closed') {
+    className = 'badge-neutral';
+  }
+
+  return (
+    <span className={`badge ${className}`}>
+      {displayText}
+    </span>
+  );
+};

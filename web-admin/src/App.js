@@ -1,5 +1,11 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  Navigate
+} from 'react-router-dom';
+
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -11,7 +17,6 @@ import StaffManagement from './pages/StaffManagement';
 import DepartmentManagement from './pages/DepartmentManagement';
 import LeaveTypes from './pages/LeaveTypes';
 import LeaveRequests from './pages/LeaveRequests';
-import AttendanceManagement from './pages/AttendanceManagement';
 import Complaints from './pages/Complaints';
 import Announcements from './pages/Announcements';
 import Notifications from './pages/Notifications';
@@ -19,33 +24,92 @@ import Reports from './pages/Reports';
 import AuditLogs from './pages/AuditLogs';
 import ProfileRequests from './pages/ProfileRequests';
 import TaskAllocation from './pages/TaskAllocation';
+import MyProfile from './pages/MyProfile';
+import SystemPrivileges from './pages/SystemPrivileges'; 
 
 function getUser() {
   try {
-    return JSON.parse(localStorage.getItem('user') || '{}');
+    return JSON.parse(
+      localStorage.getItem('user') || '{}'
+    );
   } catch {
     return {};
   }
 }
 
-function ProtectedRoute({ children, allowedRoles }) {
+function getUserRole(user) {
+  return (
+    user?.roles?.role_name ||
+    user?.role ||
+    user?.role_name ||
+    ''
+  );
+}
+
+function ProtectedRoute({
+  children,
+  allowedRoles
+}) {
   const user = getUser();
-  const isAuthenticated = !!user?.id;
-  const role = user?.role || user?.role_name;
+  const isAuthenticated = Boolean(user?.id);
+  const role = getUserRole(user);
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    return (
+      <Navigate
+        to="/login"
+        replace
+      />
+    );
   }
 
-  if (allowedRoles && !allowedRoles.includes(role)) {
-    return <Navigate to="/dashboard" replace />;
+  if (
+    Array.isArray(allowedRoles) &&
+    !allowedRoles.includes(role)
+  ) {
+    return (
+      <Navigate
+        to="/dashboard"
+        replace
+      />
+    );
   }
 
   return children;
 }
 
 function App() {
-  const allOfficerRoles = ['Admin', 'Secretary', 'Chairman', 'Praja Officer'];
+  const dashboardRoles = [
+    'Admin',
+    'Secretary',
+    'Chairman',
+    'CC Officer',
+    'Subject Officer',
+  ];
+
+  const managementRoles = [
+    'Admin',
+    'Secretary',
+    'Chairman',
+    'CC Officer',
+    'Subject Officer'
+  ];
+
+  const staffManagementRoles = [
+    'Admin',
+    'Subject Officer',
+    'Secretary',
+    'Chairman',
+    'CC Officer'
+  ];
+
+  const profileRoles = [
+    'Admin',
+    'Secretary',
+    'Chairman',
+    'CC Officer',
+    'Subject Officer'
+  ];
 
   return (
     <LanguageProvider>
@@ -62,29 +126,28 @@ function App() {
         />
 
         <Routes>
-          <Route path="/login" element={<Login />} />
+          <Route
+            path="/login"
+            element={<Login />}
+          />
 
           <Route
             path="/dashboard"
             element={
-              <ProtectedRoute allowedRoles={allOfficerRoles}>
+              <ProtectedRoute
+                allowedRoles={dashboardRoles}
+              >
                 <Dashboard />
               </ProtectedRoute>
             }
           />
 
           <Route
-                      path="/tasks"
-            element={
-              <ProtectedRoute allowedRoles={allOfficerRoles}>
-                <TaskAllocation />
-              </ProtectedRoute>
-            }
-          />
-          <Route
             path="/staff"
             element={
-              <ProtectedRoute allowedRoles={['Admin']}>
+              <ProtectedRoute
+                allowedRoles={staffManagementRoles}
+              >
                 <StaffManagement />
               </ProtectedRoute>
             }
@@ -93,7 +156,9 @@ function App() {
           <Route
             path="/departments"
             element={
-              <ProtectedRoute allowedRoles={['Admin']}>
+              <ProtectedRoute
+                allowedRoles={['Admin','Secretary','Chairman','CC Officer','Subject Officer']}
+              >
                 <DepartmentManagement />
               </ProtectedRoute>
             }
@@ -102,7 +167,14 @@ function App() {
           <Route
             path="/leave-types"
             element={
-              <ProtectedRoute allowedRoles={['Admin']}>
+              <ProtectedRoute
+                allowedRoles={[
+                  'Subject Officer',
+                  'Secretary',
+                  'Chairman',
+                  'CC Officer'
+                ]}
+              >
                 <LeaveTypes />
               </ProtectedRoute>
             }
@@ -111,17 +183,15 @@ function App() {
           <Route
             path="/leave-requests"
             element={
-              <ProtectedRoute allowedRoles={allOfficerRoles}>
+              <ProtectedRoute
+                allowedRoles={[
+                  'Subject Officer',
+                  'CC Officer',
+                  'Secretary',
+                  'Chairman'
+                ]}
+              >
                 <LeaveRequests />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/attendance"
-            element={
-              <ProtectedRoute allowedRoles={allOfficerRoles}>
-                <AttendanceManagement />
               </ProtectedRoute>
             }
           />
@@ -129,8 +199,21 @@ function App() {
           <Route
             path="/complaints"
             element={
-              <ProtectedRoute allowedRoles={allOfficerRoles}>
+              <ProtectedRoute
+                allowedRoles={managementRoles}
+              >
                 <Complaints />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/tasks"
+            element={
+              <ProtectedRoute
+                allowedRoles={managementRoles}
+              >
+                <TaskAllocation />
               </ProtectedRoute>
             }
           />
@@ -138,7 +221,9 @@ function App() {
           <Route
             path="/announcements"
             element={
-              <ProtectedRoute allowedRoles={allOfficerRoles}>
+              <ProtectedRoute
+                allowedRoles={managementRoles}
+              >
                 <Announcements />
               </ProtectedRoute>
             }
@@ -147,7 +232,9 @@ function App() {
           <Route
             path="/notifications"
             element={
-              <ProtectedRoute allowedRoles={allOfficerRoles}>
+              <ProtectedRoute
+                allowedRoles={dashboardRoles}
+              >
                 <Notifications />
               </ProtectedRoute>
             }
@@ -156,7 +243,9 @@ function App() {
           <Route
             path="/reports"
             element={
-              <ProtectedRoute allowedRoles={allOfficerRoles}>
+              <ProtectedRoute
+                allowedRoles={managementRoles}
+              >
                 <Reports />
               </ProtectedRoute>
             }
@@ -165,23 +254,67 @@ function App() {
           <Route
             path="/audit-logs"
             element={
-              <ProtectedRoute allowedRoles={['Admin']}>
+              <ProtectedRoute
+                allowedRoles={['Admin']}
+              >
                 <AuditLogs />
               </ProtectedRoute>
             }
           />
 
-                    <Route
+          <Route
             path="/profile-requests"
             element={
-              <ProtectedRoute allowedRoles={['Admin']}>
+              <ProtectedRoute
+                allowedRoles={['Admin']}
+              >
                 <ProfileRequests />
               </ProtectedRoute>
             }
           />
 
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          <Route
+            path="/my-profile"
+            element={
+              <ProtectedRoute
+                allowedRoles={profileRoles}
+              >
+                <MyProfile />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/system-privileges"
+            element={
+              <ProtectedRoute
+                allowedRoles={['Admin']}
+              >
+                <SystemPrivileges />
+              </ProtectedRoute>
+            }
+          />
+
+
+          <Route
+            path="/"
+            element={
+              <Navigate
+                to="/login"
+                replace
+              />
+            }
+          />
+
+          <Route
+            path="*"
+            element={
+              <Navigate
+                to="/dashboard"
+                replace
+              />
+            }
+          />
         </Routes>
       </BrowserRouter>
     </LanguageProvider>
