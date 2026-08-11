@@ -37,3 +37,32 @@
   }
 }
 
+.contact-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+  transition: 0.25s;
+  color: white;
+}
+
+.call-btn {
+  background: #2563eb;
+}
+
+.call-btn:hover {
+  background: #1d4ed8;
+  transform: scale(1.08);
+}
+
+.whatsapp-btn {
+  background: #25d366;
+}
+
+.whatsapp-btn:hover {
+  background: #1ebe5b;
+  transform: scale(1.08);
+}
