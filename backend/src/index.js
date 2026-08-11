@@ -17,27 +17,30 @@ app.use(express.urlencoded({ extended: true }));
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const leaveRoutes = require('./routes/leave');
-const attendanceRoutes = require('./routes/attendance');
 const complaintRoutes = require('./routes/complaints');
 const announcementRoutes = require('./routes/announcements');
 const notificationRoutes = require('./routes/notifications');
 const reportRoutes = require('./routes/reports');
 const auditRoutes = require('./routes/audit');
 const taskRoutes = require('./routes/tasks');
+const privilegeRoutes = require('./routes/privileges'); 
+const departmentRoutes = require('./routes/departments');
+const profileRoutes = require('./routes/profile');
 
 
 // Use routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/leave', leaveRoutes);
-app.use('/api/attendance', attendanceRoutes);
 app.use('/api/complaints', complaintRoutes);
 app.use('/api/announcements', announcementRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/tasks', taskRoutes);
-
+app.use('/api/privileges', privilegeRoutes); 
+app.use('/api/departments', departmentRoutes);
+app.use('/api/profile', profileRoutes);
 
 // Health check
 app.get('/', (req, res) => {
@@ -48,9 +51,11 @@ app.get('/', (req, res) => {
     });
 });
 
+const initNotificationCleanup = require('./services/cleanup');
+
 // Start server
 app.listen(PORT, () => {
     console.log(`✅ Server running on port ${PORT}`);
     console.log(`📍 http://localhost:${PORT}`);
+    initNotificationCleanup();
 });
-
