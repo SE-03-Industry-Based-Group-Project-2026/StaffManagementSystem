@@ -80,7 +80,7 @@ function getLeaveIcon(name = '', size = 28, color = '#fff') {
   return <StarIcon size={size} color={color} />;
 }
 
-function LeaveTypeCircle({ lt, index, onEdit, onDelete, animDelay, t, lang }) {
+function LeaveTypeCircle({ lt, index, onEdit, onDeletePrompt, animDelay, t, lang, isSubjectOfficer }) {
   const arcColor = ARC_COLORS[index % ARC_COLORS.length];
   const name = getLeaveName(lt, lang);
   const englishName = lt.name_en || '';
@@ -151,14 +151,31 @@ function LeaveTypeCircle({ lt, index, onEdit, onDelete, animDelay, t, lang }) {
 
       <p style={styles.arcLabel}>{name}</p>
 
-      <div className="lt-actions">
-        <button onClick={() => onEdit(lt)} style={{ ...styles.arcIconBtn, borderColor: arcColor }} title={t('edit')} type="button">
-          <AppIcon name="edit" size={15} />
-        </button>
-        <button onClick={() => onDelete(lt.id)} style={{ ...styles.arcIconBtn, borderColor: '#e24b4a', color: '#e24b4a' }} title={t('delete')} type="button">
-          <AppIcon name="trash" size={15} />
-        </button>
-      </div>
+      {isSubjectOfficer && (
+        <div className="lt-actions">
+          <button
+            onClick={() => onEdit(lt)}
+            style={{ ...styles.arcIconBtn, borderColor: arcColor }}
+            title={t('edit')}
+            type="button"
+          >
+            <AppIcon name="edit" size={15} />
+          </button>
+
+          <button
+            onClick={() => onDeletePrompt(lt)}
+            style={{
+              ...styles.arcIconBtn,
+              borderColor: '#e24b4a',
+              color: '#e24b4a'
+            }}
+            title={t('delete')}
+            type="button"
+          >
+            <AppIcon name="trash" size={15} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -179,8 +196,8 @@ function PolicyCard({ t }) {
             {t('short_leave_monthly_rule') || 'Short Leave is limited to 2 times per month.'}
           </p>
           <p style={{ ...styles.policyText, marginTop: 6 }}>
-  {t('half_day_leave_rule') || 'Two half-day leaves are counted as one full leave day.'}
-</p>
+            {t('half_day_leave_rule') || 'Two half-day leaves are counted as one full leave day.'}
+          </p>
         </div>
       </div>
     </div>
@@ -195,6 +212,11 @@ function LeaveTypes() {
   const [leaveTypes, setLeaveTypes] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
+  
+  // Custom Delete Confirmation Modal State
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState(null);
+
   const [formData, setFormData] = useState({
     name_en: '',
     name_si: '',
@@ -203,32 +225,42 @@ function LeaveTypes() {
   });
   const [loading, setLoading] = useState(true);
 
+  const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+
+  const currentRole =
+    currentUser?.roles?.role_name ||
+    currentUser?.role ||
+    currentUser?.role_name ||
+    '';
+
+  const isSubjectOfficer = currentRole === 'Subject Officer';
+
   useEffect(() => {
     loadLeaveTypes();
   }, []);
 
-const loadLeaveTypes = async () => {
-  setLoading(true);
+  const loadLeaveTypes = async () => {
+    setLoading(true);
 
-  const { data, error } = await supabase
-    .from('leave_types')
-    .select('*')
-    .order('name_en');
+    const { data, error } = await supabase
+      .from('leave_types')
+      .select('*')
+      .order('name_en');
 
-  if (error) {
-    showError(error.message);
-    setLeaveTypes([]);
-  } else {
-    const cleaned = (data || []).filter((lt) => {
-  const name = lt.name_en?.toLowerCase() || '';
-  return !name.includes('annual');
-});
+    if (error) {
+      showError(error.message);
+      setLeaveTypes([]);
+    } else {
+      const cleaned = (data || []).filter((lt) => {
+        const name = lt.name_en?.toLowerCase() || '';
+        return !name.includes('annual');
+      });
 
-setLeaveTypes(cleaned);
-  }
+      setLeaveTypes(cleaned);
+    }
 
-  setLoading(false);
-};
+    setLoading(false);
+  };
 
   const resetForm = () => {
     setFormData({
@@ -300,21 +332,28 @@ setLeaveTypes(cleaned);
     loadLeaveTypes();
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm(t('confirm_delete_leave_type') || 'Are you sure you want to delete this leave type?')) return;
+  const confirmDelete = (lt) => {
+    setItemToDelete(lt);
+    setDeleteModalOpen(true);
+  };
+
+  const handleDelete = async () => {
+    if (!itemToDelete) return;
 
     const { error } = await supabase
       .from('leave_types')
       .delete()
-      .eq('id', id);
+      .eq('id', itemToDelete.id);
 
     if (error) {
       showError(error.message);
-      return;
+    } else {
+      showSuccess(t('delete_success') || 'Deleted successfully');
+      loadLeaveTypes();
     }
 
-    showSuccess(t('delete_success') || 'Deleted successfully');
-    loadLeaveTypes();
+    setDeleteModalOpen(false);
+    setItemToDelete(null);
   };
 
   const handleEdit = (lt) => {
@@ -337,11 +376,15 @@ setLeaveTypes(cleaned);
   if (loading) {
     return (
       <Layout>
-        <div style={styles.loading}>{t('loading')}</div>
+        <div style={styles.loading}>
+          <div style={styles.loadingBox}>
+            <div className="spinner-icon" />
+            <span>{t('loading') || 'Loading...'}</span>
+          </div>
+        </div>
       </Layout>
     );
   }
-
   return (
     <Layout>
       <style>{`
@@ -407,9 +450,11 @@ setLeaveTypes(cleaned);
             </div>
           </div>
 
-          <button onClick={openCreateModal} style={styles.primaryBtn} type="button">
-            <AppIcon name="plus" size={18} /> {t('add_leave_type')}
-          </button>
+          {isSubjectOfficer && (
+            <button onClick={openCreateModal} style={styles.primaryBtn} type="button">
+              <AppIcon name="plus" size={18} /> {t('add_leave_type')}
+            </button>
+          )}
         </div>
 
         <div style={styles.statsRow}>
@@ -438,21 +483,23 @@ setLeaveTypes(cleaned);
 
         <div style={styles.circlesContainer}>
           {leaveTypes
-  .filter((lt) => !lt.name_en?.toLowerCase().includes('half'))
-  .map((lt, index) => (
-    <LeaveTypeCircle
-      key={lt.id}
-      lt={lt}
-      index={index}
-      onEdit={handleEdit}
-      onDelete={handleDelete}
-      animDelay={index * 80}
-      t={t}
-      lang={lang}
-    />
-  ))}
+            .filter((lt) => !lt.name_en?.toLowerCase().includes('half'))
+            .map((lt, index) => (
+              <LeaveTypeCircle
+                key={lt.id}
+                lt={lt}
+                index={index}
+                onEdit={handleEdit}
+                onDeletePrompt={confirmDelete}
+                isSubjectOfficer={isSubjectOfficer}
+                animDelay={index * 80}
+                t={t}
+                lang={lang}
+              />
+            ))}
         </div>
 
+        {/* Create / Edit Modal */}
         {showModal && (
           <div style={styles.modalOverlay} onClick={() => setShowModal(false)}>
             <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
@@ -529,6 +576,40 @@ setLeaveTypes(cleaned);
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {deleteModalOpen && (
+          <div style={styles.modalOverlay} onClick={() => setDeleteModalOpen(false)}>
+            <div style={{ ...styles.modalBox, width: 400 }} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <h2 style={{ ...styles.modalTitle, color: '#dc2626' }}>
+                  {t('confirm_delete_title') || 'Delete Leave Type?'}
+                </h2>
+                <button onClick={() => setDeleteModalOpen(false)} style={styles.closeBtn} type="button">✕</button>
+              </div>
+              <div style={{ padding: '20px 24px' }}>
+                <p style={{ margin: '0 0 8px 0', fontSize: 14, color: 'var(--text-primary)' }}>
+                  {t('confirm_delete_leave_type') || 'Are you sure you want to delete this leave type?'}
+                </p>
+                <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+                  {t('action_cannot_be_undone') || 'This action cannot be undone.'}
+                </p>
+                <div style={{ ...styles.modalActions, marginTop: 24 }}>
+                  <button type="button" onClick={() => setDeleteModalOpen(false)} style={styles.secondaryBtn}>
+                    {t('cancel') || 'Cancel'}
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={handleDelete} 
+                    style={{ ...styles.primaryBtn, backgroundColor: '#dc2626' }}
+                  >
+                    {t('delete') || 'Delete'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}
