@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { useLanguage } from '../context/LanguageContext';
 import Layout from '../components/Layout';
+import { PageHero, EmptyState } from '../components/PageParts';
 import AppIcon from '../components/AppIcon';
 import { StatCard } from '../components/PageParts';
 import {
@@ -14,23 +15,34 @@ import {
   ResponsiveContainer
 } from 'recharts';
 import CountUp from 'react-countup';
+import UserActivityCard from "../components/ActivityCards/UserActivityCard";
+import TaskActivityCard from "../components/ActivityCards/TaskActivityCard";
+import LeaveActivityCard from "../components/ActivityCards/LeaveActivityCard";
+import AnnouncementActivityCard from "../components/ActivityCards/AnnouncementActivityCard";
+import ComplaintActivityCard from "../components/ActivityCards/ComplaintActivityCard";
+import DefaultActivityCard from "../components/ActivityCards/DefaultActivityCard";
 
 function Dashboard() {
   const navigate = useNavigate();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+
+  const activeLanguage = String(
+    language ||
+    localStorage.getItem('language') ||
+    localStorage.getItem('appLanguage') ||
+    document.documentElement.lang ||
+    'en'
+  ).toLowerCase();
+
+  const isSinhala = activeLanguage === 'si' || activeLanguage.startsWith('si-');
+  const isTamil = activeLanguage === 'ta' || activeLanguage.startsWith('ta-');
 
   const [stats, setStats] = useState({
     totalStaff: 0,
     pendingLeaves: 0,
-    adminApprovedLeaves: 0,
-    prajaReviewedLeaves: 0,
     approvedLeaves: 0,
     rejectedLeaves: 0,
     laborLeaves: 0,
-    presentToday: 0,
-    absentToday: 0,
-    lateToday: 0,
-    onLeaveToday: 0,
     departments: 0,
     complaints: 0,
     openComplaints: 0,
@@ -40,20 +52,56 @@ function Dashboard() {
     pendingTasks: 0,
     inProgressTasks: 0,
     completedTasks: 0,
-    overdueTasks: 0
-  });
-
-  const [deptAttendance, setDeptAttendance] = useState({
-    library: 0,
-    preschool: 0,
-    others: 0
+    overdueTasks: 0,
+    pendingProfileRequests: 0,
+    auditLogs: 0,
   });
 
   const [recentActivities, setRecentActivities] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
-  const role = user.role || user.role_name || 'Admin';
+
+  const getRoleDisplayName = (userObj) => {
+    if (!userObj) return isSinhala ? 'පරිපාලක' : 'Admin';
+
+    const rolesObj = userObj?.roles;
+    if (rolesObj) {
+      if (isSinhala && rolesObj.role_name_si) return rolesObj.role_name_si;
+      if (isTamil && rolesObj.role_name_ta) return rolesObj.role_name_ta;
+    }
+
+    const rawRole = String(
+      userObj?.roles?.role_name ||
+      userObj?.role ||
+      userObj?.role_name ||
+      'Admin'
+    ).toLowerCase().trim();
+
+    if (isSinhala) {
+      if (rawRole.includes('admin')) return 'පරිපාලක';
+      if (rawRole.includes('cc')) return 'සම්බන්ධීකරණ නිලධාරී';
+      if (rawRole.includes('chairman')) return 'සභාපති';
+      if (rawRole.includes('secretary')) return 'ලේකම්';
+      if (rawRole.includes('subject')) return 'විෂය භාර නිලධාරී';
+      if (rawRole.includes('staff')) return 'කාර්ය මණ්ඩලය';
+    } else if (isTamil) {
+      if (rawRole.includes('admin')) return 'நிர்வாகி';
+      if (rawRole.includes('cc')) return 'ஒருங்கிணைப்பாளர்';
+      if (rawRole.includes('chairman')) return 'தலைவர்';
+      if (rawRole.includes('secretary')) return 'செயலாளர்';
+      if (rawRole.includes('subject')) return 'விடய அதிகாரி';
+      if (rawRole.includes('staff')) return 'ஊழியர்';
+    }
+
+    return userObj?.roles?.role_name || userObj?.role || userObj?.role_name || 'Admin';
+  };
+
+  const role =
+    user?.roles?.role_name ||
+    user?.role ||
+    user?.role_name ||
+    'Admin';
 
   useEffect(() => {
     loadStats();
@@ -61,16 +109,56 @@ function Dashboard() {
   }, []);
 
   const countRows = async (table, filters = []) => {
-    let query = supabase.from(table).select('*', { count: 'exact', head: true });
+    try {
+      let query = supabase.from(table).select('*', { count: 'exact', head: true });
 
-    filters.forEach((filter) => {
-      if (filter.type === 'eq') query = query.eq(filter.column, filter.value);
-      if (filter.type === 'lt') query = query.lt(filter.column, filter.value);
-      if (filter.type === 'neq') query = query.neq(filter.column, filter.value);
-    });
+      filters.forEach((filter) => {
+        if (filter.type === 'eq') query = query.eq(filter.column, filter.value);
+        if (filter.type === 'lt') query = query.lt(filter.column, filter.value);
+        if (filter.type === 'neq') query = query.neq(filter.column, filter.value);
+      });
 
-    const { count } = await query;
-    return count || 0;
+      const { count, error } = await query;
+      if (error) return 0;
+      return count || 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  const getComplaintCount = async (status) => {
+    let query = supabase
+      .from('complaints')
+      .select('id');
+
+    if (status) {
+      query = query.eq('status', status);
+    }
+
+    if (role === 'Chairman' || role === 'Secretary') {
+      const { data: recipients } = await supabase
+        .from('complaint_recipients')
+        .select('complaint_id')
+        .eq('recipient_id', user.id);
+
+      const complaintIds =
+        recipients?.map(r => r.complaint_id) || [];
+
+      if (complaintIds.length === 0) {
+        return 0;
+      }
+
+      query = query.in('id', complaintIds);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error(error);
+      return 0;
+    }
+
+    return data?.length || 0;
   };
 
   const loadStats = async () => {
@@ -80,14 +168,8 @@ function Dashboard() {
     const [
       totalStaff,
       pendingLeaves,
-      adminApproved,
-      prajaReviewed,
       approvedLeaves,
       rejectedLeaves,
-      presentToday,
-      absentToday,
-      lateToday,
-      onLeaveToday,
       departments,
       openComplaints,
       inProgressComplaints,
@@ -97,57 +179,51 @@ function Dashboard() {
       inProgressTasks,
       completedTasks,
       overdueTasks,
-      attendanceData,
-      auditData
+      pendingProfileRequests,
+      auditLogsCount
     ] = await Promise.all([
       countRows('users', [{ type: 'eq', column: 'is_active', value: true }]),
       countRows('leave_requests', [{ type: 'eq', column: 'status', value: 'Pending' }]),
-      countRows('leave_requests', [{ type: 'eq', column: 'status', value: 'Admin Approved' }]),
       countRows('leave_requests', [{ type: 'eq', column: 'status', value: 'Praja Reviewed' }]),
       countRows('leave_requests', [{ type: 'eq', column: 'status', value: 'Approved' }]),
       countRows('leave_requests', [{ type: 'eq', column: 'status', value: 'Rejected' }]),
-      countRows('attendance', [{ type: 'eq', column: 'date', value: today }, { type: 'eq', column: 'status', value: 'Present' }]),
-      countRows('attendance', [{ type: 'eq', column: 'date', value: today }, { type: 'eq', column: 'status', value: 'Absent' }]),
-      countRows('attendance', [{ type: 'eq', column: 'date', value: today }, { type: 'eq', column: 'status', value: 'Late' }]),
-      countRows('attendance', [{ type: 'eq', column: 'date', value: today }, { type: 'eq', column: 'status', value: 'On Leave' }]),
       countRows('departments'),
-      countRows('complaints', [{ type: 'eq', column: 'status', value: 'Open' }]),
-      countRows('complaints', [{ type: 'eq', column: 'status', value: 'In Progress' }]),
-      countRows('complaints', [{ type: 'eq', column: 'status', value: 'Resolved' }]),
-      countRows('complaints', [{ type: 'eq', column: 'status', value: 'Closed' }]),
+      getComplaintCount('Open'),
+      getComplaintCount('In Progress'),
+      getComplaintCount('Resolved'),
+      getComplaintCount('Closed'),
       countRows('tasks', [{ type: 'eq', column: 'status', value: 'Pending' }]),
       countRows('tasks', [{ type: 'eq', column: 'status', value: 'In Progress' }]),
       countRows('tasks', [{ type: 'eq', column: 'status', value: 'Done' }]),
       countRows('tasks', [{ type: 'neq', column: 'status', value: 'Done' }, { type: 'lt', column: 'due_date', value: today }]),
-      supabase.from('attendance').select('status, users(departments(department_type))').eq('date', today),
-      supabase.from('audit_logs').select('*, users(full_name, roles(role_name))').order('created_at', { ascending: false }).limit(5)
+      countRows('profile_change_requests', [{ type: 'eq', column: 'status', value: 'pending' }]),
+      countRows('audit_logs')
     ]);
-
-    const deptBreakdown = { library: 0, preschool: 0, others: 0 };
-
-    (attendanceData.data || []).forEach((row) => {
-      if (row.status === 'Present') {
-        const type = row.users?.departments?.department_type;
-        if (type === 'Library') deptBreakdown.library += 1;
-        else if (type === 'Preschool') deptBreakdown.preschool += 1;
-        else deptBreakdown.others += 1;
-      }
-    });
-
-    setDeptAttendance(deptBreakdown);
+    
+    const { data: auditLogsData } = await supabase
+      .from('audit_logs')
+      .select(`
+        *,
+        users(
+          id,
+          full_name,
+          email,
+          role_id,
+          roles(
+            role_name,
+            role_name_si,
+            role_name_ta
+          )
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .limit(5);
 
     setStats({
       totalStaff,
       pendingLeaves,
-      adminApprovedLeaves: adminApproved,
-      prajaReviewedLeaves: prajaReviewed,
       approvedLeaves,
       rejectedLeaves,
-      laborLeaves: adminApproved,
-      presentToday,
-      absentToday,
-      lateToday,
-      onLeaveToday,
       departments,
       complaints: openComplaints + inProgressComplaints,
       openComplaints,
@@ -157,81 +233,122 @@ function Dashboard() {
       pendingTasks,
       inProgressTasks,
       completedTasks,
-      overdueTasks
+      overdueTasks,
+      pendingProfileRequests,
+      auditLogs: auditLogsCount
     });
 
-    setRecentActivities(auditData.data || []);
+    setRecentActivities(auditLogsData || []);
     setLoading(false);
+  };
+
+  const formatNameWithPrefix = (name = '') => {
+    if (!name) return '';
+    let cleaned = name.trim();
+    cleaned = cleaned.replace(/^(mr|mrs|ms|dr)\.?(\s+|$)/i, (match, prefix) => {
+      const lower = prefix.toLowerCase();
+      let formatted = lower.charAt(0).toUpperCase() + lower.slice(1);
+      return formatted + '. ';
+    });
+    return cleaned;
+  };
+
+  const getProcessedActivities = () => {
+    return recentActivities.map(log => {
+      let processedLog = { ...log };
+      
+      if (processedLog.users) {
+        const formattedName = formatNameWithPrefix(processedLog.users.full_name);
+        processedLog.users.full_name = formattedName;
+        processedLog.user = processedLog.users; 
+      } else {
+        processedLog.user = {};
+      }
+      
+      return processedLog;
+    });
   };
 
   const cardsByRole = {
     Admin: [
       ['users', t('total_staff'), stats.totalStaff, 'active'],
-      ['clipboard', t('pending_admin_leaves'), stats.pendingLeaves, 'need_first_approval'],
       ['building', t('departments'), stats.departments, 'total_departments'],
+      ['users', t('profile_requests'), stats.pendingProfileRequests, 'pending_profile_requests'],
+      ['audit', t('audit_logs'), stats.auditLogs, 'recent_system_activity']
+    ],
+    Secretary: [
+      ['users', t('total_staff'), stats.totalStaff, 'active'],
+      ['building', t('departments'), stats.departments, 'total_departments'],
+      ['clipboard', t('final_leave_approvals'), stats.approvedLeaves, 'waiting_final_decision'],
       ['alert', t('complaints'), stats.complaints, 'open_in_progress'],
       ['clipboard', t('pending_tasks'), stats.pendingTasks, 'tasks_to_complete']
     ],
-    Secretary: [
-      ['clipboard', t('final_leave_approvals'), stats.adminApprovedLeaves + stats.prajaReviewedLeaves, 'waiting_final_decision'],
-      ['alert', t('complaints'), stats.complaints, 'open_in_progress'],
+    'Subject Officer': [
       ['users', t('total_staff'), stats.totalStaff, 'active'],
+      ['building', t('departments'), stats.departments, 'total_departments'],
+      ['clipboard', t('leave_requests'), stats.pendingLeaves, 'need_first_approval'],
+      ['clipboard', t('pending_tasks'), stats.pendingTasks, 'tasks_to_complete']
+    ],
+    'CC Officer': [
+      ['users', t('total_staff'), stats.totalStaff, 'active'],
+      ['building', t('departments'), stats.departments, 'total_departments'],
+      ['clipboard', t('leave_requests'), stats.pendingLeaves, 'waiting_final_decision'],
       ['clipboard', t('pending_tasks'), stats.pendingTasks, 'tasks_to_complete']
     ],
     Chairman: [
+      ['users', t('total_staff'), stats.totalStaff, 'active'],
+      ['building', t('departments'), stats.departments, 'total_departments'],
       ['clipboard', t('labor_leave_approvals'), stats.laborLeaves, 'labor_leave_only'],
       ['alert', t('complaints'), stats.complaints, 'open_in_progress'],
-      ['users', t('total_staff'), stats.totalStaff, 'active'],
-      ['clipboard', t('pending_tasks'), stats.pendingTasks, 'tasks_to_complete']
-    ],
-    'Praja Officer': [
-      ['clipboard', t('library_preschool_reviews'), stats.adminApprovedLeaves, 'need_review_note'],
-      ['alert', t('complaints'), stats.complaints, 'library_preschool_complaints'],
       ['clipboard', t('pending_tasks'), stats.pendingTasks, 'tasks_to_complete']
     ]
   };
 
   const actionsByRole = {
     Admin: [
-      ['users', t('register_staff'), 'add_manage_employees', '/staff'],
-      ['building', t('departments'), 'manage_departments', '/departments'],
-      ['clipboard', t('leave_requests'), 'first_approval_workflow', '/leave-requests'],
-      ['check', t('attendance'), 'review_attendance', '/attendance'],
-      ['alert', t('complaints'), 'track_complaints', '/complaints'],
-      ['clipboard', t('task_allocation'), 'manage_staff_tasks', '/tasks'],
-      ['report', t('reports'), 'view_all_reports', '/reports'],
-      ['audit', t('audit_logs'), 'system_activity_logs', '/audit-logs']
+      ['users', t('staff_management'), t('manage_staff'), '/staff'],
+      ['building', t('departments'), t('manage_departments'), '/departments'],
+      ['users', t('profile_requests'), t('pending_profile_requests'), '/profile-requests'],
+      ['audit', t('audit_logs'), t('recent_system_activity'), '/audit-logs']
     ],
     Secretary: [
-      ['clipboard', t('leave_requests'), 'final_approval_except_labor', '/leave-requests'],
-      ['check', t('attendance'), 'review_attendance', '/attendance'],
+      ['users', t('staff_management'), 'view_staff_information', '/staff'],
+      ['building', t('departments'), 'view_departments', '/departments'],
+      ['clipboard', t('leave_requests'), 'leave_management_workflow', '/leave-requests'],
       ['alert', t('complaints'), 'update_complaint_process', '/complaints'],
       ['clipboard', t('task_allocation'), 'manage_staff_tasks', '/tasks'],
       ['megaphone', t('announcements'), 'send_scheduled_notices', '/announcements'],
       ['report', t('reports'), 'view_all_reports', '/reports']
     ],
-    Chairman: [
-      ['clipboard', t('leave_requests'), 'approve_labor_leave_only', '/leave-requests'],
-      ['check', t('attendance'), 'review_attendance', '/attendance'],
-      ['alert', t('complaints'), 'update_complaint_process', '/complaints'],
+    'Subject Officer': [
+      ['users', t('staff_management'), 'register_staff_permission', '/staff'],
+      ['building', t('departments'), 'view_departments', '/departments'],
+      ['clipboard', t('leave_requests'), 'leave_management_workflow', '/leave-requests'],
       ['clipboard', t('task_allocation'), 'manage_staff_tasks', '/tasks'],
       ['megaphone', t('announcements'), 'send_scheduled_notices', '/announcements'],
       ['report', t('reports'), 'view_reports', '/reports']
     ],
-    'Praja Officer': [
-      ['clipboard', t('leave_requests'), 'review_library_preschool_leave', '/leave-requests'],
-      ['check', t('attendance'), 'review_library_preschool_attendance', '/attendance'],
-      ['alert', t('complaints'), 'handle_library_preschool_complaints', '/complaints'],
+    'CC Officer': [
+      ['users', t('staff_management'), 'view_staff_information', '/staff'],
+      ['building', t('departments'), 'view_departments', '/departments'],
+      ['clipboard', t('leave_requests'), 'leave_management_workflow', '/leave-requests'],
       ['clipboard', t('task_allocation'), 'manage_staff_tasks', '/tasks'],
-      ['megaphone', t('announcements'), 'send_notices', '/announcements'],
-      ['report', t('reports'), 'library_preschool_reports', '/reports']
+      ['megaphone', t('announcements'), 'send_scheduled_notices', '/announcements'],
+      ['report', t('reports'), 'view_reports', '/reports']
+    ],
+    Chairman: [
+      ['users', t('staff_management'), 'view_staff_information', '/staff'],
+      ['building', t('departments'), 'view_departments', '/departments'],
+      ['clipboard', t('leave_requests'), 'approve_labor_leave_only', '/leave-requests'],
+      ['alert', t('complaints'), 'update_complaint_process', '/complaints'],
+      ['clipboard', t('task_allocation'), 'manage_staff_tasks', '/tasks'],
+      ['megaphone', t('announcements'), 'send_scheduled_notices', '/announcements'],
+      ['report', t('reports'), 'view_reports', '/reports']
     ]
   };
 
   const leaveChart = [
     [t('pending'), stats.pendingLeaves, 'pending'],
-    [t('admin_approved'), stats.adminApprovedLeaves, 'admin_approved'],
-    [t('praja_reviewed'), stats.prajaReviewedLeaves, 'praja_reviewed'],
     [t('approved'), stats.approvedLeaves, 'approved'],
     [t('rejected'), stats.rejectedLeaves, 'rejected']
   ];
@@ -256,17 +373,22 @@ function Dashboard() {
   if (loading) {
     return (
       <Layout>
-        <div className="empty">{t('loading') || 'Loading...'}</div>
+                 
+        <div className="empty" style={styles.loading}>
+          <div className="spinner-icon" />
+          {t('loading') || 'Loading...'}</div>
       </Layout>
     );
   }
+
+  const processedActivities = getProcessedActivities();
 
   return (
     <Layout>
       <div
         className="page-hero"
         style={{
-          background: 'linear-gradient(135deg, #8b0000, #b11226)',
+          background: 'linear-gradient(#7a0018,#b11226,#d32f2f)',
           color: '#fff',
           padding: '34px 36px',
           borderRadius: '16px',
@@ -285,20 +407,27 @@ function Dashboard() {
               marginBottom: 10
             }}
           >
-            {getRoleText(role, t)} {t('workspace') || 'Workspace'}
+            {getRoleDisplayName(user)} {t('workspace') || 'Workspace'}
           </div>
 
-          <h2 style={{ fontSize: 34, margin: '0 0 10px 0', fontWeight: 800, lineHeight: 1.2 }}>
+          <h2
+            style={{
+              fontSize: 34,
+              margin: '0 0 10px 0',
+              fontWeight: 800,
+              lineHeight: 1.2
+            }}
+          >
             {new Date().getHours() < 12
-              ? 'Good Morning'
+              ? t('good_morning')
               : new Date().getHours() < 18
-              ? 'Good Afternoon'
-              : 'Good Evening'}
-            , {user.full_name || t('user')}
+              ? t('good_afternoon')
+              : t('good_evening')}
+            , {getRoleDisplayName(user)}!
           </h2>
 
           <p style={{ margin: 0, color: 'rgba(255,255,255,.86)', fontSize: 15 }}>
-            {t('role_based_dashboard') || 'Role based dashboard for your assigned responsibilities.'}
+            {t('manage_users_departments') || 'Role based dashboard for your assigned responsibilities.'}
           </p>
         </div>
       </div>
@@ -315,29 +444,48 @@ function Dashboard() {
         ))}
       </div>
 
-      <div className="pro-card" style={{ padding: '24px', borderRadius: '12px', marginBottom: '24px' }}>
-        <div className="card-head" style={{ marginBottom: '20px' }}>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>
-            {t('department_attendance')}
-          </h3>
+      {role !== 'Admin' && (
+        <div
+          className="pro-grid cards-grid"
+          style={{
+            marginBottom: 24,
+            gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
+            gap: '20px'
+          }}
+        >
+          <DashboardChart
+            title={t('leave_status_overview')}
+            icon="clipboard"
+            data={leaveChart}
+            isSinhala={isSinhala}
+            isTamil={isTamil}
+            t={t}
+          />
+
+          {(role === 'Chairman' || role === 'Secretary') && (
+            <DashboardChart
+              title={t('complaint_status_overview')}
+              icon="alert"
+              data={complaintChart}
+              isSinhala={isSinhala}
+              isTamil={isTamil}
+              t={t}
+            />
+          )}
+          <DashboardChart
+            title={t('task_status_overview')}
+            icon="clipboard"
+            data={taskChart}
+            isSinhala={isSinhala}
+            isTamil={isTamil}
+            t={t}
+          />
         </div>
+      )}
 
-        <div className="pro-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
-          <MiniInfoCard icon="book" title={t('library')} value={deptAttendance.library} note={t('present')} color="#0284c7" bg="#e0f2fe" />
-          <MiniInfoCard icon="users" title={t('preschool')} value={deptAttendance.preschool} note={t('present')} color="#16a34a" bg="#dcfce7" />
-          <MiniInfoCard icon="building" title={t('other_departments')} value={deptAttendance.others} note={t('present')} color="#9333ea" bg="#f3e8ff" />
-        </div>
-      </div>
-
-      <div className="pro-grid cards-grid" style={{ marginBottom: 24, gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
-        <DashboardChart title={t('leave_status_overview')} icon="clipboard" data={leaveChart} />
-        <DashboardChart title={t('complaint_status_overview')} icon="alert" data={complaintChart} />
-        <DashboardChart title={t('task_status_overview')} icon="clipboard" data={taskChart} />
-      </div>
-
-      <div className="pro-card" style={{ padding: '24px', borderRadius: '12px', marginBottom: '24px' }}>
+      <div className="pro-card" style={{ padding: '24px', borderRadius: '12px', marginBottom: '24px', backgroundColor: 'var(--card)', border: '1px solid var(--border)' }}>
         <div className="card-head" style={{ marginBottom: '20px' }}>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>{t('quick_actions')}</h3>
+          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>{t('quick_actions')}</h3>
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '16px' }}>
@@ -374,7 +522,7 @@ function Dashboard() {
                 </div>
 
                 <div>
-                  <h4 style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: 600 }}>{title}</h4>
+                  <h4 style={{ margin: '0 0 4px 0', fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>{title}</h4>
                   <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '13px' }}>
                     {t(text) !== text ? t(text) : text}
                   </p>
@@ -385,86 +533,47 @@ function Dashboard() {
         </div>
       </div>
 
-      <div className="pro-card" style={{ padding: '24px', borderRadius: '12px' }}>
+      <div className="pro-card" style={{ padding: '24px', borderRadius: '12px', backgroundColor: 'var(--card)', border: '1px solid var(--border)' }}>
         <div className="card-head" style={{ marginBottom: '20px' }}>
-          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>
+          <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: 'var(--text-primary)' }}>
             {t('recent_activity')}
           </h3>
         </div>
 
-        {recentActivities.length === 0 ? (
+        {processedActivities.length === 0 ? (
           <div style={{ color: 'var(--muted)', fontSize: 14 }}>{t('no_records_found')}</div>
         ) : (
           <div style={{ display: 'grid', gap: 12 }}>
-            {recentActivities.map((log, index) => {
-              const activity = getActivityColor(log.action);
+            {processedActivities.map((log) => {
+              let details = {};
+              
+              try {
+                if (log.new_value) {
+                  let parsed = typeof log.new_value === 'string' ? JSON.parse(log.new_value) : log.new_value;
+                  if (typeof parsed === 'string') parsed = JSON.parse(parsed); 
+                  details = parsed || {};
+                }
+              } catch (e) {
+                details = {};
+              }
 
-              return (
-                <div
-                  key={log.id}
-                  style={{
-                    display: 'flex',
-                    gap: 14,
-                    alignItems: 'flex-start',
-                    padding: '16px',
-                    background:
-                      index === 0
-                        ? 'linear-gradient(135deg, rgba(155,17,30,.06), rgba(255,255,255,.9))'
-                        : 'var(--gray-50)',
-                    border: '1px solid var(--border)',
-                    borderRadius: 14
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 42,
-                      height: 42,
-                      borderRadius: 12,
-                      backgroundColor: activity.bg,
-                      color: activity.color,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}
-                  >
-                    <AppIcon name={getActivityIcon(log.action)} size={19} />
-                  </div>
+              if (log.entity_type === "users") {
+                return <UserActivityCard key={log.id} log={log} details={details} t={t} />;
+              }
+              if (log.entity_type === "tasks") {
+                return <TaskActivityCard key={log.id} log={log} details={details} t={t} />;
+              }
+              if (log.entity_type === "leave_requests") {
+                return <LeaveActivityCard key={log.id} log={log} details={details} t={t} />;
+              }
+              if (log.entity_type === "announcements") {
+                return <AnnouncementActivityCard key={log.id} log={log} details={details} t={t} />;
+              }
+              if (log.entity_type === "complaints") {
+                return <ComplaintActivityCard key={log.id} log={log} details={details} t={t} />;
+              }
 
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                      <strong style={{ fontSize: 14, color: 'var(--text)' }}>
-                        {formatAction(log.action)}
-                      </strong>
-
-                      <small style={{ color: 'var(--muted)', whiteSpace: 'nowrap' }}>
-                        {formatTimeAgo(log.created_at)}
-                      </small>
-                    </div>
-
-                    <div style={{ fontSize: 13, color: 'var(--muted)', marginTop: 4 }}>
-                      {log.users?.full_name || 'System'} • {log.entity_type || '-'} #{log.entity_id || '-'}
-                    </div>
-
-                    {index === 0 && (
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          marginTop: 8,
-                          padding: '4px 8px',
-                          borderRadius: 999,
-                          backgroundColor: 'rgba(155,17,30,.1)',
-                          color: '#9b111e',
-                          fontSize: 11,
-                          fontWeight: 700
-                        }}
-                      >
-                        Latest
-                      </span>
-                    )}
-                  </div>
-                </div>
-              );
+              return <DefaultActivityCard key={log.id} log={log} details={details} t={t} />;
             })}
           </div>
         )}
@@ -473,40 +582,7 @@ function Dashboard() {
   );
 }
 
-function MiniInfoCard({ icon, title, value, note, color, bg }) {
-  return (
-    <div
-      style={{
-        padding: '20px',
-        background: 'linear-gradient(135deg, rgba(255,255,255,.95), rgba(248,250,252,.9))',
-        border: '1px solid var(--border)',
-        borderRadius: '10px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '16px'
-      }}
-    >
-      <div style={{ padding: '12px', backgroundColor: bg, color, borderRadius: '10px' }}>
-        <AppIcon name={icon} size={24} />
-      </div>
-
-      <div>
-        <h4 style={{ margin: '0 0 4px 0', color: 'var(--text-secondary)', fontSize: '14px' }}>
-          {title}
-        </h4>
-
-        <div style={{ fontSize: '20px', fontWeight: 700 }}>
-          {value}{' '}
-          <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-muted)' }}>
-            {note}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DashboardChart({ title, icon, data }) {
+function DashboardChart({ title, icon, data, isSinhala, isTamil, t }) {
   const total = data.reduce((sum, [, value]) => sum + Number(value || 0), 0);
 
   const pieData = data
@@ -517,10 +593,12 @@ function DashboardChart({ title, icon, data }) {
       key
     }));
 
+  const noDataText = isSinhala ? 'දත්ත නොමැත' : isTamil ? 'தரவுகள் இல்லை' : 'No data available';
+
   return (
-    <div className="pro-card" style={{ margin: 0, padding: '20px', borderRadius: '12px' }}>
+    <div className="pro-card" style={{ margin: 0, padding: '20px', borderRadius: '12px', backgroundColor: 'var(--card)', border: '1px solid var(--border)' }}>
       <div className="card-head" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: '16px', fontWeight: 600 }}>
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: 0, fontSize: '16px', fontWeight: 600, color: 'var(--text-primary)' }}>
           <AppIcon name={icon} size={18} />
           {title}
         </h3>
@@ -530,7 +608,7 @@ function DashboardChart({ title, icon, data }) {
 
       {total === 0 ? (
         <div style={{ color: 'var(--muted)', fontSize: 14, padding: 20, textAlign: 'center' }}>
-          No data available
+          {noDataText}
         </div>
       ) : (
         <>
@@ -561,7 +639,7 @@ function DashboardChart({ title, icon, data }) {
 
               return (
                 <div key={`${label}-${key}`}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6, fontSize: 13, color: 'var(--text-primary)' }}>
                     <span>{label}</span>
                     <strong>{value}</strong>
                   </div>
@@ -590,8 +668,6 @@ function DashboardChart({ title, icon, data }) {
 function getStatusColor(key = '') {
   const colors = {
     pending: '#f59e0b',
-    admin_approved: '#2563eb',
-    praja_reviewed: '#7c3aed',
     approved: '#16a34a',
     rejected: '#dc2626',
     open: '#f97316',
@@ -605,54 +681,15 @@ function getStatusColor(key = '') {
   return colors[key] || '#64748b';
 }
 
-function getActivityIcon(action = '') {
-  if (action.includes('LEAVE')) return 'clipboard';
-  if (action.includes('COMPLAINT')) return 'alert';
-  if (action.includes('TASK')) return 'clipboard';
-  if (action.includes('ATTENDANCE')) return 'check';
-  if (action.includes('ANNOUNCEMENT')) return 'megaphone';
-  return 'audit';
-}
-
-function getActivityColor(action = '') {
-  if (action.includes('APPROVE')) return { bg: '#dcfce7', color: '#16a34a' };
-  if (action.includes('REJECT')) return { bg: '#fee2e2', color: '#dc2626' };
-  if (action.includes('COMPLAINT')) return { bg: '#ffedd5', color: '#f97316' };
-  if (action.includes('TASK')) return { bg: '#dbeafe', color: '#2563eb' };
-  return { bg: '#f1f5f9', color: '#64748b' };
-}
-
-function formatAction(action = '') {
-  return action
-    .replaceAll('_', ' ')
-    .toLowerCase()
-    .replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function formatTimeAgo(dateString) {
-  if (!dateString) return '';
-
-  const now = new Date();
-  const date = new Date(dateString);
-  const diffMs = now - date;
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMins / 60);
-  const diffDays = Math.floor(diffHours / 24);
-
-  if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins} min ago`;
-  if (diffHours < 24) return `${diffHours} hr ago`;
-  if (diffDays < 7) return `${diffDays} day ago`;
-
-  return date.toLocaleDateString();
-}
-
-function getRoleText(roleName, t) {
-  if (roleName === 'Praja Officer') return t('praja_officer') !== 'praja_officer' ? t('praja_officer') : 'Praja Officer';
-  if (roleName === 'Admin') return t('admin') !== 'admin' ? t('admin') : 'Admin';
-  if (roleName === 'Secretary') return t('secretary') !== 'secretary' ? t('secretary') : 'Secretary';
-  if (roleName === 'Chairman') return t('chairman') !== 'chairman' ? t('chairman') : 'Chairman';
-  return roleName;
-}
+const styles = {
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '100vh',
+    fontSize: 16,
+    color: 'var(--text-secondary)'
+  }
+};
 
 export default Dashboard;
