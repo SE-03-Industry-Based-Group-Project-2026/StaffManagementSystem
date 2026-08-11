@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { supabase } from '../services/supabase';
 import { useLanguage } from '../context/LanguageContext';
 import Layout from '../components/Layout';
@@ -7,27 +7,60 @@ import '../styles/admin.css';
 import { colors } from '../utils/colors';
 import { showSuccess, showError } from '../services/toastService';
 
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+
 function DepartmentManagement() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+
+  const activeLanguage = String(language || 'en').toLowerCase();
+  const isSinhala = activeLanguage === 'si' || activeLanguage.startsWith('si-');
+  const isTamil = activeLanguage === 'ta' || activeLanguage.startsWith('ta-');
 
   const [departments, setDepartments] = useState([]);
   const [staffCounts, setStaffCounts] = useState({});
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
+  
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [selectedDept, setSelectedDept] = useState(null);
+  const [deptDesignations, setDeptDesignations] = useState([]);
+  const [deptStaff, setDeptStaff] = useState([]);
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deptToDelete, setDeptToDelete] = useState(null);
+
   const [formData, setFormData] = useState({
     department_name: '',
+    department_name_si: '',
+    department_name_ta: '',
     department_type: 'Regular',
     description: '',
     image_url: ''
   });
+
+  const [imageFile, setImageFile] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const [designationsInput, setDesignationsInput] = useState([
+    { designation_en: '', designation_si: '', designation_ta: '' }
+  ]);
+
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('All');
   const [hoveredId, setHoveredId] = useState(null);
 
+  const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+  const currentRole = currentUser?.roles?.role_name || currentUser?.role || currentUser?.role_name || '';
+  const isAdmin = currentRole === 'Admin';
+
   useEffect(() => {
-    loadDepartments();
-    loadStaffCounts();
+    const loadPageData = async () => {
+      setLoading(true);
+      await Promise.all([loadDepartments(false), loadStaffCounts()]);
+      setLoading(false);
+    };
+    loadPageData();
   }, []);
 
   const tr = (key, fallback) => {
@@ -35,62 +68,86 @@ function DepartmentManagement() {
     return value && value !== key ? value : fallback;
   };
 
-  const getTranslationKey = (name) => {
-    if (!name) return '';
-    return name.toLowerCase().trim().replace(/&/g, 'and').replace(/\s+/g, '_');
+  const getDepartmentDisplayName = (dept) => {
+    if (!dept) return '';
+    if (isSinhala) return dept.department_name_si || dept.department_name;
+    if (isTamil) return dept.department_name_ta || dept.department_name;
+    return dept.department_name;
   };
 
   const resetForm = () => {
     setFormData({
       department_name: '',
+      department_name_si: '',
+      department_name_ta: '',
       department_type: 'Regular',
       description: '',
       image_url: ''
     });
+    setImageFile(null);
+    setDesignationsInput([{ designation_en: '', designation_si: '', designation_ta: '' }]);
   };
 
-  const loadDepartments = async () => {
-    setLoading(true);
+  const loadDepartments = async (manageLoading = true) => {
+    if (manageLoading) setLoading(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Session expired');
 
-    const { data, error } = await supabase
-      .from('departments')
-      .select('*')
-      .order('department_name');
+      const response = await fetch(`${API_BASE}/departments/all`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
 
-    if (error) {
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to load departments');
+
+      setDepartments(Array.isArray(result) ? result : []);
+    } catch (error) {
       showError(error.message);
       setDepartments([]);
-    } else {
-      setDepartments(data || []);
+    } finally {
+      if (manageLoading) setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const loadStaffCounts = async () => {
-    const { data, error } = await supabase
-      .from('users')
-      .select('department_id, is_active');
-
+    const { data, error } = await supabase.from('users').select('department_id, is_active');
     if (error) {
       showError(error.message);
       return;
     }
-
     const counts = {};
-
     (data || []).forEach((user) => {
       if (!user.department_id) return;
-
       if (!counts[user.department_id]) {
         counts[user.department_id] = { total: 0, active: 0 };
       }
-
       counts[user.department_id].total += 1;
       if (user.is_active) counts[user.department_id].active += 1;
     });
-
     setStaffCounts(counts);
+  };
+
+  const handleAutoTranslate = async (text) => {
+    if (!text.trim()) return;
+    try {
+      const [resSi, resTa] = await Promise.all([
+        fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|si`).then(r => r.json()),
+        fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|ta`).then(r => r.json())
+      ]);
+
+      setFormData(prev => ({
+        ...prev,
+        department_name_si: resSi?.responseData?.translatedText || prev.department_name_si,
+        department_name_ta: resTa?.responseData?.translatedText || prev.department_name_ta
+      }));
+    } catch (err) {
+      console.error('Translation error:', err);
+    }
   };
 
   const openCreateModal = () => {
@@ -99,79 +156,182 @@ function DepartmentManagement() {
     setShowModal(true);
   };
 
-  const openEditModal = (dept) => {
+  const openEditModal = async (dept) => {
     setEditing(dept.id);
     setFormData({
       department_name: dept.department_name || '',
+      department_name_si: dept.department_name_si || '',
+      department_name_ta: dept.department_name_ta || '',
       department_type: dept.department_type || 'Regular',
       description: dept.description || '',
       image_url: dept.image_url || ''
     });
+    setImageFile(null);
+
+    const { data: desgs } = await supabase.from('designations').select('*').eq('department_id', dept.id);
+    if (desgs && desgs.length > 0) {
+      setDesignationsInput(desgs.map(d => ({
+        id: d.id,
+        designation_en: d.designation_en || '',
+        designation_si: d.designation_si || '',
+        designation_ta: d.designation_ta || ''
+      })));
+    } else {
+      setDesignationsInput([{ designation_en: '', designation_si: '', designation_ta: '' }]);
+    }
     setShowModal(true);
   };
 
   const closeModal = () => {
     setShowModal(false);
     setEditing(null);
+    resetFile();
     resetForm();
+  };
+
+  const resetFile = () => {
+    setImageFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleAddDesignationField = () => {
+    setDesignationsInput([...designationsInput, { designation_en: '', designation_si: '', designation_ta: '' }]);
+  };
+
+  const handleRemoveDesignationField = (index) => {
+    const list = [...designationsInput];
+    list.splice(index, 1);
+    setDesignationsInput(list);
+  };
+
+  const handleDesignationChange = (index, field, value) => {
+    const list = [...designationsInput];
+    list[index][field] = value;
+    setDesignationsInput(list);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Session expired');
 
-    const payload = {
-      department_name: formData.department_name.trim(),
-      department_type: formData.department_type || 'Regular',
-      description: formData.description || null,
-      image_url: formData.image_url || null
-    };
+      let finalImageUrl = formData.image_url;
 
-    if (editing) {
-      const { error } = await supabase
-        .from('departments')
-        .update(payload)
-        .eq('id', editing);
+      if (imageFile) {
+        const fileExt = imageFile.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('Departments')
+          .upload(fileName, imageFile);
 
-      if (error) {
-        showError(error.message);
-        return;
+        if (uploadError) {
+          showError('Image upload failed: ' + uploadError.message);
+          return;
+        }
+
+        const { data: urlData } = supabase.storage
+          .from('Departments')
+          .getPublicUrl(fileName);
+
+        finalImageUrl = urlData.publicUrl;
       }
 
-      showSuccess(t('update_success') || 'Updated successfully');
-    } else {
-      const { error } = await supabase
-        .from('departments')
-        .insert([payload]);
+      const payload = {
+        id: editing,
+        department_name: formData.department_name.trim(),
+        department_name_si: formData.department_name_si.trim() || null,
+        department_name_ta: formData.department_name_ta.trim() || null,
+        department_type: formData.department_type || 'Regular',
+        description: formData.description || null,
+        image_url: finalImageUrl || null
+      };
 
-      if (error) {
-        showError(error.message);
-        return;
+      const endpoint = editing ? `${API_BASE}/departments/update` : `${API_BASE}/departments/add`;
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to save department');
+
+      let deptId = editing || result.data?.id;
+
+      for (const item of designationsInput) {
+        if (!item.designation_en.trim()) continue;
+        const desPayload = {
+          department_id: deptId,
+          designation_en: item.designation_en.trim(),
+          designation_si: item.designation_si.trim() || null,
+          designation_ta: item.designation_ta.trim() || null
+        };
+
+        if (item.id) {
+          await supabase.from('designations').update(desPayload).eq('id', item.id);
+        } else {
+          await supabase.from('designations').insert([desPayload]);
+        }
       }
 
-      showSuccess(t('create_success') || 'Created successfully');
+      showSuccess(editing ? (isSinhala ? 'දෙපාර්තමේන්තුව යාවත්කාලීන කරන ලදී' : 'Department updated successfully') : (isSinhala ? 'දෙපාර්තමේන්තුව සාදන ලදී' : 'Department created successfully'));
+      closeModal();
+      loadDepartments();
+      loadStaffCounts();
+    } catch (error) {
+      showError(error.message);
     }
-
-    closeModal();
-    loadDepartments();
-    loadStaffCounts();
   };
 
-  const handleDelete = async (id) => {
-    if (!window.confirm(tr('confirm_delete_department', 'Are you sure you want to delete this department?'))) return;
+  const handleCardClick = async (dept) => {
+    setSelectedDept(dept);
+    const { data: desgs } = await supabase.from('designations').select('*').eq('department_id', dept.id);
+    setDeptDesignations(desgs || []);
 
-    const { error } = await supabase
-      .from('departments')
-      .delete()
-      .eq('id', id);
+    const { data: staff } = await supabase
+      .from('users')
+      .select('id, full_name, email, is_active, designation_id, roles:role_id(role_name)')
+      .eq('department_id', dept.id);
+    setDeptStaff(staff || []);
+    setDetailModalOpen(true);
+  };
 
-    if (error) {
+  const handleDeleteClick = (dept) => {
+    setDeptToDelete(dept);
+    setDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!deptToDelete) return;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Session expired');
+
+      const response = await fetch(`${API_BASE}/departments/delete/${deptToDelete.id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`
+        }
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to delete department');
+
+      showSuccess(isSinhala ? 'දෙපාර්තමේන්තුව ඉවත් කරන ලදී' : 'Department deleted successfully');
+      setDeleteModalOpen(false);
+      setDeptToDelete(null);
+      loadDepartments();
+      loadStaffCounts();
+    } catch (error) {
       showError(error.message);
-      return;
+      setDeleteModalOpen(false);
+      setDeptToDelete(null);
     }
-
-    showSuccess(t('delete_success') || 'Deleted successfully');
-    loadDepartments();
-    loadStaffCounts();
   };
 
   const departmentTypes = useMemo(() => {
@@ -181,16 +341,15 @@ function DepartmentManagement() {
 
   const filteredDepartments = useMemo(() => {
     const keyword = searchQuery.toLowerCase().trim();
-
     return departments.filter((dept) => {
       const matchSearch =
         !keyword ||
         dept.department_name?.toLowerCase().includes(keyword) ||
-        dept.department_type?.toLowerCase().includes(keyword) ||
+        dept.department_name_si?.toLowerCase().includes(keyword) ||
+        dept.department_name_ta?.toLowerCase().includes(keyword) ||
         dept.description?.toLowerCase().includes(keyword);
 
       const matchType = typeFilter === 'All' || dept.department_type === typeFilter;
-
       return matchSearch && matchType;
     });
   }, [departments, searchQuery, typeFilter]);
@@ -201,7 +360,12 @@ function DepartmentManagement() {
   if (loading) {
     return (
       <Layout>
-        <div style={styles.loading}>{t('loading')}</div>
+        <div style={styles.loading}>
+          <div style={styles.loadingBox}>
+            <div className="spinner-icon" />
+            <span>{t('loading') || 'Loading...'}</span>
+          </div>
+        </div>
       </Layout>
     );
   }
@@ -220,17 +384,19 @@ function DepartmentManagement() {
             <p style={styles.breadcrumb}>{t('dashboard')} / {t('department_management')}</p>
           </div>
 
-          <button onClick={openCreateModal} style={styles.primaryBtn} type="button">
-            <AppIcon name="plus" size={17} />
-            {t('add_department')}
-          </button>
+          {isAdmin && (
+            <button onClick={openCreateModal} style={styles.primaryBtn} type="button">
+              <AppIcon name="plus" size={18} />
+              {tr('new_department', 'New Department')}
+            </button>
+          )}
         </div>
 
         <div style={styles.statsRow}>
-        <InfoCard icon="building" label={t('departments')} value={departments.length} />
-        <InfoCard icon="users" label={tr('total_staff', 'Total Staff')} value={totalStaff} tone="success" />
-        <InfoCard icon="check" label={t('active')} value={activeStaff} tone="success" />
-      </div>
+          <InfoCard icon="building" label={t('departments')} value={departments.length} />
+          <InfoCard icon="users" label={tr('total_staff', 'Total Staff')} value={totalStaff} tone="success" />
+          <InfoCard icon="check" label={t('active')} value={activeStaff} tone="success" />
+        </div>
 
         <div style={styles.filterBar}>
           <div style={styles.searchBox}>
@@ -251,7 +417,7 @@ function DepartmentManagement() {
             <option value="All">{t('all') || 'All'}</option>
             {departmentTypes.map((type) => (
               <option key={type} value={type}>
-                {tr(getTranslationKey(type), type)}
+                {tr(type.toLowerCase(), type)}
               </option>
             ))}
           </select>
@@ -267,7 +433,7 @@ function DepartmentManagement() {
           <div style={styles.departmentsGrid}>
             {filteredDepartments.map((dept) => {
               const countInfo = staffCounts[dept.id] || { total: 0, active: 0 };
-              const typeKey = getTranslationKey(dept.department_type);
+              const typeName = tr(dept.department_type?.toLowerCase(), dept.department_type || 'Regular');
 
               return (
                 <div
@@ -275,44 +441,49 @@ function DepartmentManagement() {
                   style={styles.thumbnailCard}
                   onMouseEnter={() => setHoveredId(dept.id)}
                   onMouseLeave={() => setHoveredId(null)}
+                  onClick={() => handleCardClick(dept)}
                 >
                   <img
-                    src={dept.image_url || `https://picsum.photos/seed/dept${dept.id}/400/250`}
+                    loading="lazy"
+                    src={dept.image_url || '/images/default-department.jpg'}
                     alt={dept.department_name}
                     style={styles.thumbnailImage}
+                    onError={(event) => {
+                      event.currentTarget.onerror = null;
+                      event.currentTarget.src = '/images/default-department.jpg';
+                    }}
                   />
-
                   <div style={styles.thumbnailOverlay} />
 
-              
-              {hoveredId === dept.id && (
-  <div style={styles.actionFloat}>
-    <button
-      onClick={() => openEditModal(dept)}
-      style={{ ...styles.iconBtn, color: '#2563eb' }}
-      type="button"
-      title={t('edit')}
-    >
-      <AppIcon name="edit" size={17} />
-    </button>
+                  {isAdmin && hoveredId === dept.id && (
+                    <div style={styles.actionFloat} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => openEditModal(dept)}
+                        style={{ ...styles.iconBtn, color: '#2563eb' }}
+                        type="button"
+                        title={t('edit')}
+                      >
+                        <AppIcon name="edit" size={17} />
+                      </button>
 
-    <button
-      onClick={() => handleDelete(dept.id)}
-      style={{ ...styles.iconBtn, color: '#dc2626' }}
-      type="button"
-      title={t('delete')}
-    >
-      <AppIcon name="trash" size={17} />
-    </button>
-  </div>
-)}
+                      <button
+                        onClick={() => handleDeleteClick(dept)}
+                        style={{ ...styles.iconBtn, color: '#dc2626' }}
+                        type="button"
+                        title={t('delete')}
+                      >
+                        <AppIcon name="trash" size={17} />
+                      </button>
+                    </div>
+                  )}
+
                   <div style={styles.thumbnailContent}>
                     <div style={styles.cardTopLine}>
-                      <span style={styles.typeBadge}>{tr(typeKey, dept.department_type || 'Regular')}</span>
+                      <span style={styles.typeBadge}>{typeName}</span>
                     </div>
 
                     <h3 style={styles.thumbnailTitle}>
-                      {tr(getTranslationKey(dept.department_name), dept.department_name)}
+                      {getDepartmentDisplayName(dept)}
                     </h3>
 
                     {dept.description && (
@@ -320,12 +491,8 @@ function DepartmentManagement() {
                     )}
 
                     <div style={styles.thumbnailMeta}>
-                      <span style={styles.glassBadge}>
-                        {countInfo.total} {t('staff')}
-                      </span>
-                      <span style={styles.glassBadge}>
-                        {countInfo.active} {t('active')}
-                      </span>
+                      <span style={styles.glassBadge}>{countInfo.total} {t('staff')}</span>
+                      <span style={styles.glassBadge}>{countInfo.active} {t('active')}</span>
                     </div>
                   </div>
                 </div>
@@ -334,9 +501,95 @@ function DepartmentManagement() {
           </div>
         )}
 
+        {/* DEPARTMENT DETAILS MODAL */}
+        {detailModalOpen && selectedDept && (
+          <div style={styles.modalOverlay} onClick={() => setDetailModalOpen(false)}>
+            <div style={{ ...styles.modalBox, maxWidth: 700 }} onClick={(e) => e.stopPropagation()}>
+              <div style={styles.modalHeader}>
+                <h2 style={styles.modalTitle}>{getDepartmentDisplayName(selectedDept)}</h2>
+                <button onClick={() => setDetailModalOpen(false)} style={styles.closeBtn} type="button">
+                  <AppIcon name="x" size={20} />
+                </button>
+              </div>
+
+              <div style={styles.modalBody}>
+                {selectedDept.description && (
+                  <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 20 }}>
+                    {selectedDept.description}
+                  </p>
+                )}
+
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>
+                  {tr('designations_and_staff', 'Designations & Staff Members')}
+                </h3>
+
+                {deptDesignations.length === 0 ? (
+                  <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{tr('no_designations', 'No designations found for this department.')}</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {deptDesignations.map((desg) => {
+                      const staffInDesg = deptStaff.filter(s => s.designation_id === desg.id);
+                      const desgName = isSinhala ? (desg.designation_si || desg.designation_en) : isTamil ? (desg.designation_ta || desg.designation_en) : desg.designation_en;
+
+                      return (
+                        <div key={desg.id} style={{ backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 8, padding: 14 }}>
+                          <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text-primary)', marginBottom: 6 }}>
+                            {desgName}
+                          </div>
+                          
+                          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                            <strong>{tr('assigned_staff', 'Assigned Staff')} ({staffInDesg.length}):</strong>
+                            {staffInDesg.length === 0 ? (
+                              <span style={{ marginLeft: 6, fontStyle: 'italic' }}>{tr('none_assigned', 'None assigned')}</span>
+                            ) : (
+                              <ul style={{ margin: '6px 0 0 16px', padding: 0 }}>
+                                {staffInDesg.map(st => (
+                                  <li key={st.id} style={{ marginBottom: 4 }}>
+                                    {st.full_name} ({st.email}) {st.is_active ? <span style={{ color: '#16a34a' }}>● Active</span> : <span style={{ color: '#dc2626' }}>● Inactive</span>}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* DELETE CONFIRMATION MODAL */}
+        {deleteModalOpen && (
+          <div style={styles.modalOverlay} onClick={() => setDeleteModalOpen(false)}>
+            <div style={{ ...styles.modalBox, maxWidth: 420, textAlign: 'center', padding: '24px' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ width: 54, height: 54, borderRadius: '50%', backgroundColor: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
+                <AppIcon name="trash" size={26} />
+              </div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+                Delete Department?
+              </h3>
+              <p style={{ fontSize: 14, color: 'var(--text-secondary)', marginBottom: 24 }}>
+                Are you sure you want to delete <strong>{getDepartmentDisplayName(deptToDelete)}</strong>? This action cannot be undone.
+              </p>
+              <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
+                <button type="button" style={styles.secondaryBtn} onClick={() => setDeleteModalOpen(false)}>
+                  {t('cancel')}
+                </button>
+                <button type="button" style={{ ...styles.primaryBtn, backgroundColor: '#dc2626' }} onClick={confirmDelete}>
+                  {t('delete')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ADD / EDIT DEPARTMENT MODAL */}
         {showModal && (
           <div style={styles.modalOverlay} onClick={closeModal}>
-            <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
+            <div style={{ ...styles.modalBox, maxWidth: 650 }} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <h2 style={styles.modalTitle}>{editing ? t('edit_department') : t('new_department')}</h2>
                 <button onClick={closeModal} style={styles.closeBtn} type="button">
@@ -346,12 +599,31 @@ function DepartmentManagement() {
 
               <form onSubmit={handleSubmit} style={styles.modalBody}>
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>{t('department_name')}</label>
+                  <label style={styles.label}>{tr('department_name_en', 'Department Name (English)')}</label>
                   <input
                     style={styles.input}
                     required
                     value={formData.department_name}
                     onChange={(e) => setFormData({ ...formData, department_name: e.target.value })}
+                    onBlur={(e) => handleAutoTranslate(e.target.value)}
+                  />
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>{tr('department_name_si', 'Department Name (Sinhala)')}</label>
+                  <input
+                    style={styles.input}
+                    value={formData.department_name_si}
+                    onChange={(e) => setFormData({ ...formData, department_name_si: e.target.value })}
+                  />
+                </div>
+
+                <div style={styles.formGroup}>
+                  <label style={styles.label}>{tr('department_name_ta', 'Department Name (Tamil)')}</label>
+                  <input
+                    style={styles.input}
+                    value={formData.department_name_ta}
+                    onChange={(e) => setFormData({ ...formData, department_name_ta: e.target.value })}
                   />
                 </div>
 
@@ -365,8 +637,6 @@ function DepartmentManagement() {
                     <option value="Regular">{tr('regular', 'Regular')}</option>
                     <option value="Library">{tr('library', 'Library')}</option>
                     <option value="Preschool">{tr('preschool', 'Preschool')}</option>
-                    <option value="Technical">{tr('technical', 'Technical')}</option>
-                    <option value="Administrative">{tr('administrative', 'Administrative')}</option>
                   </select>
                 </div>
 
@@ -374,19 +644,95 @@ function DepartmentManagement() {
                   <label style={styles.label}>{tr('description', 'Description')}</label>
                   <textarea
                     style={styles.textarea}
-                    rows="4"
+                    rows="3"
                     value={formData.description || ''}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   />
                 </div>
 
+                {/* IMAGE UPLOAD OR DIRECT URL */}
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>{tr('image_url', 'Image URL')}</label>
+                  <label style={styles.label}>{tr('department_image', 'Department Image (Upload or URL)')}</label>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          setImageFile(e.target.files[0]);
+                        }
+                      }}
+                      style={{ fontSize: '13px' }}
+                    />
+                    {imageFile && (
+                      <button type="button" onClick={resetFile} style={{ ...styles.secondaryBtn, padding: '4px 10px', fontSize: '12px' }}>
+                        Clear File
+                      </button>
+                    )}
+                  </div>
                   <input
                     style={styles.input}
+                    placeholder="Or paste image direct URL here..."
                     value={formData.image_url || ''}
                     onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
                   />
+                </div>
+
+                {/* DESIGNATIONS SECTION */}
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 16 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                    <label style={{ ...styles.label, margin: 0 }}>{tr('designations_under_dept', 'Designations under this Department')}</label>
+                    <button type="button" onClick={handleAddDesignationField} style={{ ...styles.secondaryBtn, padding: '6px 12px', fontSize: 13 }}>
+                      {tr('add_designation', '+ Add Designation')}
+                    </button>
+                  </div>
+
+                  {designationsInput.map((item, index) => (
+                    <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+                      <input
+                        style={styles.input}
+                        placeholder={tr('english_name', 'English Name')}
+                        value={item.designation_en}
+                        onChange={(e) => handleDesignationChange(index, 'designation_en', e.target.value)}
+                        onBlur={async (e) => {
+                          const val = e.target.value;
+                          if (val.trim() && (!item.designation_si || !item.designation_ta)) {
+                            try {
+                              const [resSi, resTa] = await Promise.all([
+                                fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(val)}&langpair=en|si`).then(r => r.json()),
+                                fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(val)}&langpair=en|ta`).then(r => r.json())
+                              ]);
+                              
+                              const list = [...designationsInput];
+                              if (resSi?.responseData?.translatedText) list[index].designation_si = resSi.responseData.translatedText;
+                              if (resTa?.responseData?.translatedText) list[index].designation_ta = resTa.responseData.translatedText;
+                              setDesignationsInput(list);
+                            } catch (err) {
+                              console.error(err);
+                            }
+                          }
+                        }}
+                      />
+                      <input
+                        style={styles.input}
+                        placeholder={tr('sinhala_name', 'සිංහල නම')}
+                        value={item.designation_si}
+                        onChange={(e) => handleDesignationChange(index, 'designation_si', e.target.value)}
+                      />
+                      <input
+                        style={styles.input}
+                        placeholder={tr('tamil_name', 'தமிழ் பெயர்')}
+                        value={item.designation_ta}
+                        onChange={(e) => handleDesignationChange(index, 'designation_ta', e.target.value)}
+                      />
+                      {designationsInput.length > 1 && (
+                        <button type="button" onClick={() => handleRemoveDesignationField(index)} style={{ ...styles.iconBtn, color: '#dc2626', width: 32, height: 32 }}>
+                          <AppIcon name="trash" size={15} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
 
                 <div style={styles.modalActions}>
@@ -412,7 +758,6 @@ function InfoCard({ icon, label, value, tone = 'default' }) {
     success: { bg: '#dcfce7', color: '#16a34a' },
     warning: { bg: '#ffedd5', color: '#f97316' }
   };
-
   const selected = toneMap[tone] || toneMap.default;
 
   return (
@@ -420,7 +765,6 @@ function InfoCard({ icon, label, value, tone = 'default' }) {
       <div style={{ ...styles.statIconBox, backgroundColor: selected.bg, color: selected.color }}>
         <AppIcon name={icon} size={22} />
       </div>
-
       <div>
         <div style={styles.statValue}>{value}</div>
         <div style={styles.statLabel}>{label}</div>
@@ -431,290 +775,49 @@ function InfoCard({ icon, label, value, tone = 'default' }) {
 
 const styles = {
   container: { padding: 0, backgroundColor: 'var(--bg-primary)', minHeight: '100vh' },
-  pageHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 24,
-    padding: 24,
-    backgroundColor: 'var(--card)',
-    borderRadius: 12,
-    border: '1px solid var(--border)'
-  },
-  pageTitle: {
-    fontSize: 28,
-    fontWeight: 700,
-    color: 'var(--text-primary)',
-    margin: '0 0 8px 0',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 12
-  },
-  titleIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 10,
-    backgroundColor: 'var(--primary-soft)',
-    color: 'var(--primary)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
+  pageHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 24, padding: 24, backgroundColor: 'var(--card)', borderRadius: 12, border: '1px solid var(--border)' },
+  pageTitle: { fontSize: 28, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: 12 },
+  titleIconBox: { width: 42, height: 42, borderRadius: 10, backgroundColor: 'var(--primary-soft)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   breadcrumb: { fontSize: 14, color: 'var(--text-secondary)', margin: 0 },
-  primaryBtn: {
-    padding: '12px 24px',
-    backgroundColor: 'var(--primary)',
-    color: '#fff',
-    border: 'none',
-    borderRadius: 8,
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    justifyContent: 'center'
-  },
-  secondaryBtn: {
-    padding: '12px 24px',
-    backgroundColor: 'var(--card)',
-    color: 'var(--text-primary)',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    fontSize: 14,
-    fontWeight: 600,
-    cursor: 'pointer'
-  },
-  statsRow: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-    gap: 20,
-    marginBottom: 24,
-    padding: '0 24px'
-  },
-  statCard: {
-    backgroundColor: 'var(--card)',
-    padding: 20,
-    borderRadius: 12,
-    display: 'flex',
-    alignItems: 'center',
-    gap: 16,
-    border: '1px solid var(--border)'
-  },
-  statIconBox: {
-    width: 56,
-    height: 56,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 10
-  },
+  primaryBtn: { padding: '12px 24px', backgroundColor: 'var(--primary)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'center' },
+  secondaryBtn: { padding: '12px 24px', backgroundColor: 'var(--card)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' },
+  statsRow: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20, marginBottom: 24, padding: '0 24px' },
+  statCard: { backgroundColor: 'var(--card)', padding: 20, borderRadius: 12, display: 'flex', alignItems: 'center', gap: 16, border: '1px solid var(--border)' },
+  statIconBox: { width: 56, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
   statValue: { fontSize: 24, fontWeight: 700, color: 'var(--text-primary)' },
   statLabel: { fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 },
-  filterBar: {
-    display: 'flex',
-    gap: '16px',
-    marginBottom: '24px',
-    padding: '0 24px',
-    flexWrap: 'wrap'
-  },
-  searchBox: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    backgroundColor: 'var(--card)',
-    border: '1px solid var(--border)',
-    padding: '10px 16px',
-    borderRadius: '8px',
-    flex: 1,
-    minWidth: '250px'
-  },
-  searchInput: {
-    border: 'none',
-    outline: 'none',
-    background: 'transparent',
-    width: '100%',
-    fontSize: '14px',
-    color: 'var(--text-primary)'
-  },
-  filterSelect: {
-    padding: '10px 16px',
-    border: '1px solid var(--border)',
-    borderRadius: '8px',
-    backgroundColor: 'var(--card)',
-    color: 'var(--text-primary)',
-    fontSize: '14px',
-    outline: 'none',
-    cursor: 'pointer'
-  },
-  emptyState: {
-    margin: '0 24px',
-    padding: 54,
-    textAlign: 'center',
-    color: 'var(--text-secondary)',
-    backgroundColor: 'var(--card)',
-    border: '1px solid var(--border)',
-    borderRadius: 12
-  },
-  departmentsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
-    gap: 24,
-    padding: '0 24px',
-    marginBottom: '40px'
-  },
-  thumbnailCard: {
-    position: 'relative',
-    borderRadius: '16px',
-    overflow: 'hidden',
-    height: '240px',
-    backgroundColor: 'var(--card)',
-    cursor: 'default',
-    boxShadow: '0 12px 24px rgba(15,23,42,.08)'
-  },
+  filterBar: { display: 'flex', gap: '16px', marginBottom: '24px', padding: '0 24px', flexWrap: 'wrap' },
+  searchBox: { display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: 'var(--card)', border: '1px solid var(--border)', padding: '10px 16px', borderRadius: '8px', flex: 1, minWidth: '250px' },
+  searchInput: { border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '14px', color: 'var(--text-primary)' },
+  filterSelect: { padding: '10px 16px', border: '1px solid var(--border)', borderRadius: '8px', backgroundColor: 'var(--card)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none', cursor: 'pointer' },
+  emptyState: { margin: '0 24px', padding: 54, textAlign: 'center', color: 'var(--text-secondary)', backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 },
+  departmentsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 24, padding: '0 24px', marginBottom: '40px' },
+  thumbnailCard: { position: 'relative', borderRadius: '16px', overflow: 'hidden', height: '240px', backgroundColor: 'var(--card)', cursor: 'pointer', boxShadow: '0 12px 24px rgba(15,23,42,.08)' },
   thumbnailImage: { width: '100%', height: '100%', objectFit: 'cover' },
-  thumbnailOverlay: {
-    position: 'absolute',
-    inset: 0,
-    background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0.35) 100%)'
-  },
-  actionFloat: { position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '8px' },
-  iconBtn: {
-    width: '36px',
-    height: '36px',
-    borderRadius: '50%',
-    backgroundColor: 'rgba(255,255,255,0.92)',
-    border: 'none',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    cursor: 'pointer',
-    color: colors.primary,
-    boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-  },
+  thumbnailOverlay: { position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0.35) 100%)' },
+  actionFloat: { position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '8px', zIndex: 10 },
+  iconBtn: { width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.92)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: colors.primary, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' },
   thumbnailContent: { position: 'absolute', bottom: '16px', left: '16px', right: '16px' },
   cardTopLine: { marginBottom: 8 },
-  typeBadge: {
-    background: 'rgba(255,255,255,0.22)',
-    backdropFilter: 'blur(4px)',
-    padding: '4px 10px',
-    borderRadius: 999,
-    color: '#ffffff',
-    fontSize: '12px',
-    fontWeight: 700,
-    border: '1px solid rgba(255,255,255,0.3)'
-  },
-  thumbnailTitle: {
-    color: '#ffffff',
-    margin: '0 0 8px 0',
-    fontSize: '21px',
-    fontWeight: 800,
-    textShadow: '0 2px 4px rgba(0,0,0,0.6)',
-    letterSpacing: '0.3px'
-  },
-  thumbnailDesc: {
-    color: 'rgba(255,255,255,.85)',
-    fontSize: 13,
-    lineHeight: 1.4,
-    margin: '0 0 10px 0',
-    maxHeight: 38,
-    overflow: 'hidden'
-  },
+  typeBadge: { background: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(4px)', padding: '4px 10px', borderRadius: 999, color: '#ffffff', fontSize: '12px', fontWeight: 700, border: '1px solid rgba(255,255,255,0.3)' },
+  thumbnailTitle: { color: '#ffffff', margin: '0 0 8px 0', fontSize: '21px', fontWeight: 800, textShadow: '0 2px 4px rgba(0,0,0,0.6)', letterSpacing: '0.3px' },
+  thumbnailDesc: { color: 'rgba(255,255,255,.85)', fontSize: 13, lineHeight: 1.4, margin: '0 0 10px 0', maxHeight: 38, overflow: 'hidden' },
   thumbnailMeta: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' },
-  glassBadge: {
-    background: 'rgba(255,255,255,0.25)',
-    backdropFilter: 'blur(4px)',
-    padding: '4px 10px',
-    borderRadius: '6px',
-    color: '#ffffff',
-    fontSize: '12px',
-    fontWeight: 600,
-    border: '1px solid rgba(255,255,255,0.3)'
-  },
-  modalOverlay: {
-    position: 'fixed',
-    inset: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-    padding: 20
-  },
-  modalBox: {
-    backgroundColor: 'var(--card)',
-    borderRadius: '12px',
-    width: '100%',
-    maxWidth: 560,
-    maxHeight: '90vh',
-    overflow: 'auto',
-    boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
-  },
-  modalHeader: {
-    padding: 24,
-    borderBottom: '1px solid var(--border)',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
+  glassBadge: { background: 'rgba(255,255,255,0.25)', backdropFilter: 'blur(4px)', padding: '4px 10px', borderRadius: '6px', color: '#ffffff', fontSize: '12px', fontWeight: 600, border: '1px solid rgba(255,255,255,0.3)' },
+  modalOverlay: { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: 20 },
+  modalBox: { backgroundColor: 'var(--card)', borderRadius: '12px', width: '100%', maxWidth: 700, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' },
+  modalHeader: { padding: 24, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
   modalTitle: { fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', margin: 0 },
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 6,
-    border: 'none',
-    backgroundColor: 'var(--gray-100)',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
+  closeBtn: { width: 32, height: 32, borderRadius: 6, border: 'none', backgroundColor: 'var(--gray-100)', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   modalBody: { padding: 24 },
   formGroup: { marginBottom: 20 },
   label: { display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 },
-  input: {
-    width: '100%',
-    padding: '12px 16px',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    fontSize: 14,
-    color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-primary)',
-    boxSizing: 'border-box'
-  },
-  select: {
-    width: '100%',
-    padding: '12px 16px',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    fontSize: 14,
-    color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-primary)',
-    boxSizing: 'border-box',
-    cursor: 'pointer'
-  },
-  textarea: {
-    width: '100%',
-    padding: '12px 16px',
-    border: '1px solid var(--border)',
-    borderRadius: 8,
-    fontSize: 14,
-    color: 'var(--text-primary)',
-    backgroundColor: 'var(--bg-primary)',
-    boxSizing: 'border-box',
-    fontFamily: 'inherit',
-    resize: 'vertical'
-  },
+  input: { width: '100%', padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)', boxSizing: 'border-box' },
+  select: { width: '100%', padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)', boxSizing: 'border-box', cursor: 'pointer' },
+  textarea: { width: '100%', padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' },
   modalActions: { display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 },
-  loading: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: '100vh',
-    fontSize: 16,
-    color: 'var(--text-secondary)'
-  }
+  loading: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100%' },
+  loadingBox: { display: 'flex', alignItems: 'center', gap: 12, color: 'var(--muted)', fontSize: 14, fontWeight: 600 }
 };
 
 export default DepartmentManagement;

@@ -9,8 +9,44 @@ import '../styles/pro-admin.css';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
+const formatNameWithPrefix = (title = '', name = '') => {
+  let cleanTitle = String(title || '').trim();
+  let cleanName = String(name || '').trim();
+
+  if (!cleanName) return 'N/A';
+
+  if (cleanTitle) {
+    const lower = cleanTitle.toLowerCase().replace('.', '');
+    if (['mr', 'mrs', 'ms', 'dr'].includes(lower)) {
+      cleanTitle = lower.charAt(0).toUpperCase() + lower.slice(1) + '.';
+    }
+    return `${cleanTitle} ${cleanName}`;
+  }
+
+  const matched = cleanName.match(/^(mr|mrs|ms|dr)\.?\s+/i);
+  if (matched) {
+    const lower = matched[1].toLowerCase();
+    const formattedTitle = lower.charAt(0).toUpperCase() + lower.slice(1) + '.';
+    cleanName = cleanName.replace(/^(mr|mrs|ms|dr)\.?\s+/i, '');
+    return `${formattedTitle} ${cleanName}`;
+  }
+
+  return cleanName;
+};
+
 function TaskAllocation() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+
+  const activeLanguage = String(
+    language ||
+    localStorage.getItem('language') ||
+    localStorage.getItem('appLanguage') ||
+    document.documentElement.lang ||
+    'en'
+  ).toLowerCase();
+
+  const isSinhala = activeLanguage === 'si' || activeLanguage.startsWith('si-');
+  const isTamil = activeLanguage === 'ta' || activeLanguage.startsWith('ta-');
 
   const [tasks, setTasks] = useState([]);
   const [staff, setStaff] = useState([]);
@@ -18,13 +54,13 @@ function TaskAllocation() {
   const [selectedDept, setSelectedDept] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const [formData, setFormData] = useState({
     title: '',
     description: '',
     assigned_to: '',
     department_id: '',
-    frequency: 'Daily',
     due_date: ''
   });
 
@@ -37,8 +73,24 @@ function TaskAllocation() {
     return value && value !== key ? value : fallback;
   };
 
-  const getAuthHeaders = () => {
-    const token = localStorage.getItem('supabase_token');
+  const getAuthHeaders = async () => {
+    const {
+      data: { session },
+      error
+    } = await supabase.auth.getSession();
+
+    if (error) {
+      console.error('Session error:', error);
+    }
+
+    const token =
+      session?.access_token ||
+      localStorage.getItem('supabase_token');
+
+    if (!token) {
+      throw new Error('Authentication token not found. Please log in again.');
+    }
+
     return {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`
@@ -48,21 +100,46 @@ function TaskAllocation() {
   const getTranslationKey = (name) =>
     !name ? '' : name.toLowerCase().trim().replace(/&/g, 'and').replace(/\s+/g, '_');
 
+  const isPrajaDepartment = (department) => {
+    const name = String(department?.department_name || '')
+      .trim()
+      .toLowerCase();
+
+    const type = String(department?.department_type || '')
+      .trim()
+      .toLowerCase();
+
+    return (
+      type === 'library' ||
+      type === 'preschool' ||
+      name === 'library services' ||
+      name === 'preschool education'
+    );
+  };
+
   const loadData = async () => {
     try {
       const { data: deptData } = await supabase
         .from('departments')
-        .select('id, department_name, department_type')
+        .select('id, department_name, department_name_si, department_name_ta, department_type')
         .order('department_name');
+
+      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+      const loggedInRole =
+        currentUser?.roles?.role_name ||
+        currentUser?.role ||
+        currentUser?.role_name ||
+        '';
+      const loggedInDepartmentId = currentUser?.department_id || '';
 
       const { data: staffData } = await supabase
         .from('users')
-        .select('id, full_name, department_id, designation, roles(role_name), departments(department_name, department_type)')
+        .select('id, title, full_name, department_id, designations(id, designation_en, designation_si, designation_ta), roles(role_name, role_name_si, role_name_ta), departments(department_name, department_name_si, department_name_ta, department_type)')
         .eq('is_active', true)
         .order('full_name');
 
       const res = await fetch(`${API_BASE}/tasks/all`, {
-        headers: getAuthHeaders()
+        headers: await getAuthHeaders()
       });
 
       const data = await res.json();
@@ -74,33 +151,86 @@ function TaskAllocation() {
         setTasks(data || []);
       }
 
-      setDepartments(deptData || []);
-      setStaff(staffData || []);
+      let filteredDepartments = deptData || [];
+
+      if (loggedInRole === 'Praja Officer') {
+        filteredDepartments = filteredDepartments.filter(isPrajaDepartment);
+      } else if (loggedInRole === 'Department Head') {
+        filteredDepartments = filteredDepartments.filter(
+          (d) => String(d.id) === String(loggedInDepartmentId)
+        );
+      }
+
+      const allowedDepartmentIds = new Set(
+        filteredDepartments.map((d) => String(d.id))
+      );
+
+      const filteredStaff = (staffData || []).filter((s) =>
+        allowedDepartmentIds.has(String(s.department_id))
+      );
+
+      setDepartments(filteredDepartments);
+      setStaff(filteredStaff);
+
+      if (
+        loggedInRole === 'Praja Officer' &&
+        filteredDepartments.length > 0
+      ) {
+        setFormData((prev) => ({
+          ...prev,
+          department_id:
+            prev.department_id || String(filteredDepartments[0].id),
+          assigned_to: ''
+        }));
+      }
     } catch (err) {
       console.error(err);
-      showError(tr('failed_connect_backend', 'Failed to connect backend'));
+
+      if (
+        err.message?.toLowerCase().includes('token') ||
+        err.message?.toLowerCase().includes('authentication')
+      ) {
+        showError(err.message);
+      } else {
+        showError(tr('failed_connect_backend', 'Failed to connect backend'));
+      }
     }
   };
 
   const resetForm = () => {
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    const loggedInRole =
+      currentUser?.roles?.role_name ||
+      currentUser?.role ||
+      currentUser?.role_name ||
+      '';
+
+    const defaultDepartmentId =
+      loggedInRole === 'Praja Officer' && departments.length > 0
+        ? String(departments[0].id)
+        : '';
+
     setFormData({
       title: '',
       description: '',
       assigned_to: '',
-      department_id: '',
-      frequency: 'Daily',
+      department_id: defaultDepartmentId,
       due_date: ''
     });
+
     setSelectedDept('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitting) return;
 
     try {
+      setSubmitting(true);
+
       const res = await fetch(`${API_BASE}/tasks/assign`, {
         method: 'POST',
-        headers: getAuthHeaders(),
+        headers: await getAuthHeaders(),
         body: JSON.stringify(formData)
       });
 
@@ -108,6 +238,7 @@ function TaskAllocation() {
 
       if (!res.ok) {
         showError(data.error || tr('failed_to_assign_task', 'Failed to assign task'));
+        setSubmitting(false);
         return;
       }
 
@@ -117,7 +248,17 @@ function TaskAllocation() {
       loadData();
     } catch (err) {
       console.error(err);
-      showError(tr('failed_connect_backend', 'Failed to connect backend'));
+
+      if (
+        err.message?.toLowerCase().includes('token') ||
+        err.message?.toLowerCase().includes('authentication')
+      ) {
+        showError(err.message);
+      } else {
+        showError(tr('failed_connect_backend', 'Failed to connect backend'));
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -125,11 +266,6 @@ function TaskAllocation() {
     if (!task.due_date || task.status === 'Done') return false;
     const today = new Date().toISOString().slice(0, 10);
     return task.due_date < today;
-  };
-
-  const translateFrequency = (frequency) => {
-    if (!frequency) return '-';
-    return tr(String(frequency).toLowerCase(), frequency);
   };
 
   const translateStatus = (status) => {
@@ -152,11 +288,14 @@ function TaskAllocation() {
     const keyword = searchTerm.toLowerCase().trim();
 
     return tasks.filter((task) => {
+      const assignedUser = task.assigned_to_user;
+      const formattedAssignedName = formatNameWithPrefix(assignedUser?.title, assignedUser?.full_name).toLowerCase();
+
       const titleMatch =
         !keyword ||
         task.title?.toLowerCase().includes(keyword) ||
         task.description?.toLowerCase().includes(keyword) ||
-        task.assigned_to_user?.full_name?.toLowerCase().includes(keyword) ||
+        formattedAssignedName.includes(keyword) ||
         task.departments?.department_name?.toLowerCase().includes(keyword);
 
       const deptMatch = selectedDept === '' || String(task.department_id) === String(selectedDept);
@@ -174,20 +313,6 @@ function TaskAllocation() {
       overdue: tasks.filter((task) => isOverdue(task)).length
     };
   }, [tasks]);
-
-  const progressWidth = (task) => {
-    if (isOverdue(task)) return '85%';
-    if (task.status === 'Done') return '100%';
-    if (task.status === 'In Progress') return '60%';
-    return '30%';
-  };
-
-  const progressColor = (task) => {
-    if (isOverdue(task)) return '#dc2626';
-    if (task.status === 'Done') return '#16a34a';
-    if (task.status === 'In Progress') return '#2563eb';
-    return '#ea580c';
-  };
 
   return (
     <Layout>
@@ -235,11 +360,18 @@ function TaskAllocation() {
             value={selectedDept}
           >
             <option value="">{t('all_departments') || 'All Departments'}</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {tr(getTranslationKey(d.department_name), d.department_name)}
-              </option>
-            ))}
+            {departments.map((d) => {
+              const deptDisplayName = isSinhala
+                ? (d.department_name_si || d.department_name)
+                : isTamil
+                ? (d.department_name_ta || d.department_name)
+                : d.department_name;
+              return (
+                <option key={d.id} value={String(d.id)}>
+                  {deptDisplayName}
+                </option>
+              );
+            })}
           </select>
         </div>
 
@@ -258,7 +390,6 @@ function TaskAllocation() {
                   <th>{t('title') || 'Title'}</th>
                   <th>{t('staff') || 'Staff'}</th>
                   <th>{t('department') || 'Department'}</th>
-                  <th>{tr('frequency', 'Frequency')}</th>
                   <th>{tr('due_date', 'Due Date')}</th>
                   <th>{t('status') || 'Status'}</th>
                   <th>{t('progress') || 'Progress'}</th>
@@ -268,50 +399,84 @@ function TaskAllocation() {
               <tbody>
                 {filteredTasks.length === 0 ? (
                   <tr>
-                    <td colSpan="7" style={styles.emptyCell}>
+                    <td colSpan="6" style={styles.emptyCell}>
                       <AppIcon name="clipboard" size={28} />
                       <div style={{ marginTop: 8 }}>{tr('no_tasks_found', 'No tasks found')}</div>
                     </td>
                   </tr>
                 ) : (
-                  filteredTasks.map((task) => (
-                    <tr key={task.id}>
-                      <td>
-                        <strong>{task.title}</strong>
-                        {task.description && (
-                          <>
-                            <br />
-                            <small style={{ color: 'var(--muted)' }}>{task.description}</small>
-                          </>
-                        )}
-                      </td>
+                  filteredTasks.map((task) => {
+                    const deptObj = task.departments;
+                    const deptText = deptObj
+                      ? (isSinhala ? (deptObj.department_name_si || deptObj.department_name) : isTamil ? (deptObj.department_name_ta || deptObj.department_name) : deptObj.department_name)
+                      : 'N/A';
 
-                      <td>{task.assigned_to_user?.full_name || 'N/A'}</td>
+                    const staffUser = task.assigned_to_user;
+                    const formattedStaffName = staffUser ? formatNameWithPrefix(staffUser.title, staffUser.full_name) : 'N/A';
 
-                      <td>
-                        {task.departments?.department_name
-                          ? tr(getTranslationKey(task.departments.department_name), task.departments.department_name)
-                          : 'N/A'}
-                      </td>
+                    return (
+                      <tr key={task.id}>
+                        <td>
+                          <strong>{task.title}</strong>
+                          {task.description && (
+                            <>
+                              <br />
+                              <small style={{ color: 'var(--muted)' }}>{task.description}</small>
+                            </>
+                          )}
+                        </td>
 
-                      <td>{translateFrequency(task.frequency)}</td>
-                      <td>{task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}</td>
-                      <td>{getStatusBadge(task.status, isOverdue(task))}</td>
+                        <td>
+                          {formattedStaffName}
+                          {staffUser?.designations && (
+                            <>
+                              <br />
+                              <small style={{ color: 'var(--muted)' }}>
+                                ({
+                                  isSinhala 
+                                    ? (staffUser.designations.designation_si || staffUser.designations.designation_en)
+                                    : isTamil 
+                                    ? (staffUser.designations.designation_ta || staffUser.designations.designation_en)
+                                    : staffUser.designations.designation_en
+                                })
+                              </small>
+                            </>
+                          )}
+                        </td>
 
-                      <td>
-                        <div style={styles.progressTrack}>
-                          <div
-                            style={{
-                              width: progressWidth(task),
-                              backgroundColor: progressColor(task),
-                              height: '100%',
-                              borderRadius: '10px'
-                            }}
-                          />
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                        <td>{deptText}</td>
+
+                        <td>{task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}</td>
+                        <td>{getStatusBadge(task.status, isOverdue(task))}</td>
+
+                        <td>
+                          <div style={styles.progressTrack}>
+                            <div
+                              style={{
+                                width: isOverdue(task)
+                                  ? '100%'
+                                  : task.status === 'Done' || task.status === 'Completed'
+                                  ? '100%'
+                                  : task.status === 'In Progress'
+                                  ? '60%'
+                                  : '30%',
+                                backgroundColor: isOverdue(task)
+                                  ? '#dc2626'
+                                  : task.status === 'Done' || task.status === 'Completed'
+                                  ? '#16a34a'
+                                  : task.status === 'In Progress'
+                                  ? '#2563eb'
+                                  : '#ea580c',
+                                height: '100%',
+                                borderRadius: '10px',
+                                transition: 'width 0.4s ease, background-color 0.4s ease'
+                              }}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -364,15 +529,42 @@ function TaskAllocation() {
                       value={formData.department_id}
                       onChange={(e) => {
                         setSelectedDept(e.target.value);
-                        setFormData({ ...formData, department_id: e.target.value, assigned_to: '' });
+                        setFormData({
+                          ...formData,
+                          department_id: e.target.value,
+                          assigned_to: ''
+                        });
                       }}
                     >
-                      <option value="">{t('select_department') || 'Select Department'}</option>
-                      {departments.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {tr(getTranslationKey(d.department_name), d.department_name)}
-                        </option>
-                      ))}
+                      {(() => {
+                        const currentUser = JSON.parse(
+                          localStorage.getItem('user') || '{}'
+                        );
+                        const loggedInRole =
+                          currentUser?.roles?.role_name ||
+                          currentUser?.role ||
+                          currentUser?.role_name ||
+                          '';
+
+                        return loggedInRole !== 'Praja Officer' ? (
+                          <option value="">
+                            {t('select_department') || 'Select Department'}
+                          </option>
+                        ) : null;
+                      })()}
+
+                      {departments.map((d) => {
+                        const deptDisplayName = isSinhala
+                          ? (d.department_name_si || d.department_name)
+                          : isTamil
+                          ? (d.department_name_ta || d.department_name)
+                          : d.department_name;
+                        return (
+                          <option key={d.id} value={String(d.id)}>
+                            {deptDisplayName}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 
@@ -386,27 +578,24 @@ function TaskAllocation() {
                     >
                       <option value="">{t('select_staff') || 'Select Staff'}</option>
                       {staff
-                        .filter((s) => String(s.department_id) === String(formData.department_id))
-                        .map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.full_name}
-                          </option>
-                        ))}
-                    </select>
-                  </div>
+                        .filter(
+                          (s) =>
+                            String(s.department_id) === String(formData.department_id)
+                        )
+                        .map((s) => {
+                          const desigObj = s.designations;
+                          const desigText = desigObj
+                            ? (isSinhala ? (desigObj.designation_si || desigObj.designation_en) : isTamil ? (desigObj.designation_ta || desigObj.designation_en) : desigObj.designation_en)
+                            : '';
 
-                  <div className="field">
-                    <label>{tr('frequency', 'Frequency')}</label>
-                    <select
-                      className="select"
-                      required
-                      value={formData.frequency}
-                      onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
-                    >
-                      <option value="Daily">{tr('daily', 'Daily')}</option>
-                      <option value="Weekly">{tr('weekly', 'Weekly')}</option>
-                      <option value="Monthly">{tr('monthly', 'Monthly')}</option>
-                      <option value="Yearly">{tr('yearly', 'Yearly')}</option>
+                          const formattedStaffName = formatNameWithPrefix(s.title, s.full_name);
+
+                          return (
+                            <option key={s.id} value={s.id}>
+                              {formattedStaffName} {desigText ? `(${desigText})` : ''}
+                            </option>
+                          );
+                        })}
                     </select>
                   </div>
 
@@ -422,11 +611,11 @@ function TaskAllocation() {
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-                    <button className="btn btn-soft" type="button" onClick={() => { resetForm(); setShowModal(false); }}>
+                    <button className="btn btn-soft" type="button" disabled={submitting} onClick={() => { resetForm(); setShowModal(false); }}>
                       {t('cancel') || 'Cancel'}
                     </button>
-                    <button className="btn btn-primary" type="submit">
-                      {t('assign') || 'Assign'}
+                    <button className="btn btn-primary" type="submit" disabled={submitting}>
+                      {submitting ? (tr('assigning', 'Assigning...') || 'Assigning...') : (t('assign') || 'Assign')}
                     </button>
                   </div>
                 </form>
