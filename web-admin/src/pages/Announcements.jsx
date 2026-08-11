@@ -6,10 +6,27 @@ import Layout from '../components/Layout';
 import AppIcon from '../components/AppIcon';
 import { colors } from '../utils/colors';
 import { showSuccess, showError } from '../services/toastService';
+import {
+  formatSriLankaDateTime,
+  utcToSriLankaDateTimeInput
+} from '../utils/dateTime';
+
+const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 function Announcements() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const location = useLocation();
+
+  const activeLanguage = String(
+    language ||
+    localStorage.getItem('language') ||
+    localStorage.getItem('appLanguage') ||
+    document.documentElement.lang ||
+    'en'
+  ).toLowerCase();
+
+  const isSinhala = activeLanguage === 'si' || activeLanguage.startsWith('si-');
+  const isTamil = activeLanguage === 'ta' || activeLanguage.startsWith('ta-');
 
   const [announcements, setAnnouncements] = useState([]);
   const [departments, setDepartments] = useState([]);
@@ -30,6 +47,35 @@ function Announcements() {
   const [sending, setSending] = useState(false);
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
+  const role = user?.roles?.role_name || user?.role || user?.role_name || 'Admin';
+  const isPrajaOfficer = role === 'Praja Officer';
+
+  const getAuthHeaders = async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token || localStorage.getItem('supabase_token') || '';
+
+    return {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`
+    };
+  };
+
+  const isPrajaDepartment = (department) => {
+    const name = String(department?.department_name || '')
+      .trim()
+      .toLowerCase();
+
+    const type = String(department?.department_type || '')
+      .trim()
+      .toLowerCase();
+
+    return (
+      type === 'library' ||
+      type === 'preschool' ||
+      name === 'library services' ||
+      name === 'preschool education'
+    );
+  };
 
   useEffect(() => {
     loadAnnouncements();
@@ -52,40 +98,92 @@ function Announcements() {
     return value && value !== key ? value : fallback;
   };
 
-  const getTranslationKey = (name) => {
-    if (!name) return '';
-    return name.toLowerCase().trim().replace(/&/g, 'and').replace(/\s+/g, '_');
+  const translateRoleName = (roleName) => {
+    if (!roleName) return '-';
+    let roleKey = roleName;
+    if (roleKey === 'Admin') roleKey = 'admin';
+    else if (roleKey === 'CC Officer') roleKey = 'cc_officer';
+    else if (roleKey === 'Chairman') roleKey = 'chairman';
+    else if (roleKey === 'Secretary') roleKey = 'secretary';
+    else if (roleKey === 'Subject Officer') roleKey = 'subject_officer';
+    else if (roleKey === 'Staff') roleKey = 'staff';
+    else if (roleKey === 'Praja Officer') roleKey = 'praja_officer';
+
+    return t(roleKey) || roleName;
   };
 
   const loadAnnouncements = async () => {
-    const now = new Date().toISOString();
+    try {
+      setLoading(true);
+      const headers = await getAuthHeaders();
 
-    const { data, error } = await supabase
-      .from('announcements')
-      .select('*, users(full_name), departments(department_name)')
-      .or(`expires_at.is.null,expires_at.gt.${now}`)
-      .order('created_at', { ascending: false });
+      const res = await fetch(`${API_BASE}/announcements`, {
+        headers
+      });
 
-    if (error) {
-      showError(error.message);
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.error || tr('failed_to_load_announcements', 'Failed to load announcements'));
+        setAnnouncements([]);
+        return;
+      }
+
+      const visibleAnnouncements = isPrajaOfficer
+        ? (data || []).filter((announcement) => isPrajaDepartment(announcement.departments))
+        : (data || []);
+
+      setAnnouncements(visibleAnnouncements);
+    } catch (error) {
+      console.error(error);
+      showError(tr('failed_connect_backend', 'Failed to connect backend'));
+      setAnnouncements([]);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    setAnnouncements(data || []);
-    setLoading(false);
   };
 
   const loadDepartments = async () => {
-    const { data } = await supabase.from('departments').select('*').order('department_name');
-    setDepartments(data || []);
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('*')
+        .order('department_name');
+
+      if (error) {
+        showError(error.message);
+        setDepartments([]);
+        return;
+      }
+
+      const visibleDepartments = isPrajaOfficer
+        ? (data || []).filter(isPrajaDepartment)
+        : (data || []);
+
+      setDepartments(visibleDepartments);
+
+      if (isPrajaOfficer && visibleDepartments.length > 0) {
+        setFormData((prev) => ({
+          ...prev,
+          department_id:
+            prev.department_id || String(visibleDepartments[0].id)
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to load departments:', error);
+      showError(tr('failed_to_load_departments', 'Failed to load departments'));
+      setDepartments([]);
+    }
   };
 
   const resetForm = () => {
     setFormData({
       title: '',
       message: '',
-      department_id: '',
+      department_id:
+        isPrajaOfficer && departments.length > 0
+          ? String(departments[0].id)
+          : '',
       expires_at: '',
       priority: 'Medium'
     });
@@ -107,7 +205,13 @@ function Announcements() {
   const openEditModal = (e, announcement) => {
     e.stopPropagation();
 
-    if (announcement.created_by !== user.id) {
+    const currentUserId =
+      user?.user_id ||
+      user?.db_id ||
+      user?.profile_id ||
+      user?.id;
+
+    if (announcement.created_by !== currentUserId) {
       showError(t('access_denied_authorized') || 'You do not have permission to edit this announcement.');
       return;
     }
@@ -118,7 +222,7 @@ function Announcements() {
       title: announcement.title || '',
       message: announcement.message || '',
       department_id: announcement.department_id || '',
-      expires_at: announcement.expires_at ? announcement.expires_at.slice(0, 16) : '',
+      expires_at: utcToSriLankaDateTimeInput(announcement.expires_at),
       priority: announcement.priority || 'Medium'
     });
     setShowModal(true);
@@ -133,6 +237,12 @@ function Announcements() {
 
   const sendAnnouncement = async (e) => {
     e.preventDefault();
+
+    if (isPrajaOfficer && !formData.department_id) {
+      showError(tr('select_department', 'Please select Library Service or Pre School Service'));
+      return;
+    }
+
     setSending(true);
 
     const payload = {
@@ -143,37 +253,41 @@ function Announcements() {
       priority: formData.priority || 'Medium'
     };
 
-    if (isEditing && selectedAnnouncement) {
-      const { error } = await supabase
-        .from('announcements')
-        .update(payload)
-        .eq('id', selectedAnnouncement.id);
+    try {
+      const url = isEditing && selectedAnnouncement
+        ? `${API_BASE}/announcements/${selectedAnnouncement.id}`
+        : `${API_BASE}/announcements/send`;
 
-      if (error) {
-        showError(error.message);
-      } else {
-        showSuccess(t('update_success') || 'Announcement updated successfully');
-        closeModal();
-        loadAnnouncements();
-      }
-    } else {
-      const { error } = await supabase.from('announcements').insert([
-        {
-          ...payload,
-          created_by: user.id
-        }
-      ]);
+      const method = isEditing && selectedAnnouncement ? 'PUT' : 'POST';
+      const headers = await getAuthHeaders();
 
-      if (error) {
-        showError(error.message);
-      } else {
-        showSuccess(t('sent_success'));
-        closeModal();
-        loadAnnouncements();
+      const res = await fetch(url, {
+        method,
+        headers,
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        showError(data.error || tr('announcement_action_failed', 'Announcement action failed'));
+        return;
       }
+
+      showSuccess(
+        isEditing
+          ? (t('update_success') || 'Announcement updated successfully')
+          : (t('sent_success') || 'Announcement sent successfully')
+      );
+
+      closeModal();
+      await loadAnnouncements();
+    } catch (error) {
+      console.error(error);
+      showError(tr('failed_connect_backend', 'Failed to connect backend'));
+    } finally {
+      setSending(false);
     }
-
-    setSending(false);
   };
 
   const filteredAnnouncements = useMemo(() => {
@@ -181,15 +295,19 @@ function Announcements() {
 
     return announcements.filter((ann) => {
       const deptName = ann.departments?.department_name || '';
-      return (
+      const deptType = ann.departments?.department_type || '';
+      const roleMatch = !isPrajaOfficer || isPrajaDepartment(ann.departments);
+
+      return roleMatch && (
         !keyword ||
         ann.title?.toLowerCase().includes(keyword) ||
         ann.message?.toLowerCase().includes(keyword) ||
         deptName.toLowerCase().includes(keyword) ||
+        deptType.toLowerCase().includes(keyword) ||
         ann.priority?.toLowerCase().includes(keyword)
       );
     });
-  }, [announcements, searchTerm]);
+  }, [announcements, searchTerm, isPrajaOfficer]);
 
   const stats = useMemo(() => {
     const today = new Date().toDateString();
@@ -216,10 +334,11 @@ function Announcements() {
     return tr('low', 'Low');
   };
 
+  
   if (loading) {
     return (
       <Layout>
-        <div style={styles.loading}>{t('loading')}</div>
+        <div style={styles.loading}><div className="spinner-icon" />{t('loading')}</div>
       </Layout>
     );
   }
@@ -281,13 +400,34 @@ function Announcements() {
             ) : (
               filteredAnnouncements.map((ann) => {
                 const priorityStyle = getPriorityStyle(ann.priority || 'Medium');
+                
+              
+                const displayTitle = isSinhala
+                  ? (ann.title_si || ann.title_en || ann.title)
+                  : isTamil
+                  ? (ann.title_ta || ann.title_en || ann.title)
+                  : (ann.title_en || ann.title);
+
+                const displayMessage = isSinhala
+                  ? (ann.message_si || ann.message_en || ann.message)
+                  : isTamil
+                  ? (ann.message_ta || ann.message_en || ann.message)
+                  : (ann.message_en || ann.message);
+                
+                const deptText = isSinhala
+                  ? (ann.departments?.department_name_si || ann.departments?.department_name || t('all_departments'))
+                  : isTamil
+                  ? (ann.departments?.department_name_ta || ann.departments?.department_name || t('all_departments'))
+                  : (ann.departments?.department_name || t('all_departments'));
+
+                const authorRoleDisplay = translateRoleName(ann?.users?.roles?.role_name);
 
                 return (
                   <div key={ann.id} style={styles.announcementItem} onClick={() => openViewModal(ann)}>
                     <div style={styles.announcementTop}>
                       <div style={styles.titleRow}>
                         <div>
-                          <h3 style={styles.announcementTitle}>{ann.title}</h3>
+                          <h3 style={styles.announcementTitle}>{displayTitle}</h3>
 
                           <div style={styles.badgeRow}>
                             <span style={{ ...styles.priorityBadge, backgroundColor: priorityStyle.bg, color: priorityStyle.color }}>
@@ -296,7 +436,7 @@ function Announcements() {
 
                             {ann.expires_at && (
                               <span style={styles.scheduledBadge}>
-                                {tr('expires', 'Expires')}: {new Date(ann.expires_at).toLocaleString('en-GB')}
+                                {tr('expires', 'Expires')}: {formatSriLankaDateTime(ann.expires_at)}
                               </span>
                             )}
                           </div>
@@ -311,22 +451,20 @@ function Announcements() {
 
                       <div style={styles.metaRow}>
                         <span style={styles.metaItem}>
-                          <AppIcon name="users" size={14} /> {ann.users?.full_name || '-'}
+                          👤 {authorRoleDisplay}
                         </span>
                         <span style={styles.metaItem}>
                           <AppIcon name="building" size={14} />
-                          {ann.departments?.department_name
-                            ? tr(getTranslationKey(ann.departments.department_name), ann.departments.department_name)
-                            : t('all_departments')}
+                          {deptText}
                         </span>
                         <span style={styles.metaItem}>
-                          <AppIcon name="calendar" size={14} /> {new Date(ann.created_at).toLocaleString('en-GB')}
+                          <AppIcon name="calendar" size={14} /> {formatSriLankaDateTime(ann.created_at)}
                         </span>
                       </div>
                     </div>
 
                     <div style={styles.announcementBody}>
-                      <p style={styles.announcementMessage}>{ann.message}</p>
+                      <p style={styles.announcementMessage}>{displayMessage}</p>
                     </div>
                   </div>
                 );
@@ -352,7 +490,13 @@ function Announcements() {
               {selectedAnnouncement && !isEditing ? (
                 <div style={styles.modalBody}>
                   <div style={styles.modalNoticeHead}>
-                    <h3 style={styles.announcementTitle}>{selectedAnnouncement.title}</h3>
+                    <h3 style={styles.announcementTitle}>
+                      {isSinhala
+                        ? (selectedAnnouncement.title_si || selectedAnnouncement.title_en || selectedAnnouncement.title)
+                        : isTamil
+                        ? (selectedAnnouncement.title_ta || selectedAnnouncement.title_en || selectedAnnouncement.title)
+                        : (selectedAnnouncement.title_en || selectedAnnouncement.title)}
+                    </h3>
                     <span
                       style={{
                         ...styles.priorityBadge,
@@ -365,26 +509,36 @@ function Announcements() {
                   </div>
 
                   <div style={styles.metaRow}>
-                    <span style={styles.metaItem}>👤 {selectedAnnouncement.users?.full_name || '-'}</span>
+                    <span style={styles.metaItem}>
+                      👤 {translateRoleName(selectedAnnouncement?.users?.roles?.role_name)}
+                    </span>
                     <span style={styles.metaItem}>
                       🏢{' '}
-                      {selectedAnnouncement.departments?.department_name
-                        ? tr(getTranslationKey(selectedAnnouncement.departments.department_name), selectedAnnouncement.departments.department_name)
-                        : t('all_departments')}
+                      {isSinhala
+                        ? (selectedAnnouncement.departments?.department_name_si || selectedAnnouncement.departments?.department_name || t('all_departments'))
+                        : isTamil
+                        ? (selectedAnnouncement.departments?.department_name_ta || selectedAnnouncement.departments?.department_name || t('all_departments'))
+                        : (selectedAnnouncement.departments?.department_name || t('all_departments'))}
                     </span>
-                    <span style={styles.metaItem}>📅 {new Date(selectedAnnouncement.created_at).toLocaleString('en-GB')}</span>
+                    <span style={styles.metaItem}>📅 {formatSriLankaDateTime(selectedAnnouncement.created_at)}</span>
                   </div>
 
                   {selectedAnnouncement.expires_at && (
                     <div style={{ marginTop: 12 }}>
                       <span style={styles.scheduledBadge}>
-                        {tr('expires', 'Expires')}: {new Date(selectedAnnouncement.expires_at).toLocaleString('en-GB')}
+                        {tr('expires', 'Expires')}: {formatSriLankaDateTime(selectedAnnouncement.expires_at)}
                       </span>
                     </div>
                   )}
 
                   <div style={{ ...styles.announcementBody, marginTop: 18 }}>
-                    <p style={styles.announcementMessage}>{selectedAnnouncement.message}</p>
+                    <p style={styles.announcementMessage}>
+                      {isSinhala
+                        ? (selectedAnnouncement.message_si || selectedAnnouncement.message_en || selectedAnnouncement.message)
+                        : isTamil
+                        ? (selectedAnnouncement.message_ta || selectedAnnouncement.message_en || selectedAnnouncement.message)
+                        : (selectedAnnouncement.message_en || selectedAnnouncement.message)}
+                    </p>
                   </div>
 
                   <div style={styles.modalActions}>
@@ -423,20 +577,39 @@ function Announcements() {
                     <label style={styles.label}>{t('department')}</label>
                     <select
                       value={formData.department_id}
-                      onChange={(e) => setFormData({ ...formData, department_id: e.target.value })}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          department_id: e.target.value
+                        })
+                      }
                       style={styles.select}
+                      required={isPrajaOfficer}
                     >
-                      <option value="">{t('all_departments')}</option>
-                      {departments.map((dept) => (
-                        <option key={dept.id} value={dept.id}>
-                          {tr(getTranslationKey(dept.department_name), dept.department_name)}
+                      {!isPrajaOfficer && (
+                        <option value="">
+                          {t('all_departments')}
                         </option>
-                      ))}
+                      )}
+
+                      {departments.map((dept) => {
+                        const deptName = isSinhala
+                          ? (dept.department_name_si || dept.department_name)
+                          : isTamil
+                          ? (dept.department_name_ta || dept.department_name)
+                          : dept.department_name;
+
+                        return (
+                          <option key={dept.id} value={String(dept.id)}>
+                            {deptName}
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
 
                   <div style={styles.formGroup}>
-                    <label style={styles.label}>{t('expire_time') || 'Expiry Date & Time'}</label>
+                    <label style={styles.label}>{t('expiry_date_time') || 'Expiry Date & Time'}</label>
                     <input
                       type="datetime-local"
                       value={formData.expires_at}
@@ -459,6 +632,7 @@ function Announcements() {
 
                   <div style={styles.modalActions}>
                     <button type="button" onClick={closeModal} style={styles.secondaryBtn}>{t('cancel')}</button>
+                  <div className="spinner-icon" /><span>{t('logging_in') || 'Logging in...'}</span>
                     <button type="submit" disabled={sending} style={styles.primaryBtn}>
                       {sending ? t('loading') : isEditing ? t('update') : t('add')}
                     </button>
@@ -695,7 +869,7 @@ const styles = {
   },
   modalBox: {
     backgroundColor: 'var(--card)',
-    borderRadius: 12,
+    borderRadius: '12px',
     width: '100%',
     maxWidth: 620,
     maxHeight: '90vh',
@@ -779,6 +953,31 @@ const styles = {
     height: '100vh',
     fontSize: 16,
     color: 'var(--muted)'
+  },
+
+  loading: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '100vh',
+    backgroundColor: 'var(--bg-primary)'
+  },
+  loadingBox: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 12,
+    color: 'var(--muted)',
+    fontSize: 14,
+    fontWeight: 600
+  },
+
+  spinner: {
+    width: 20,
+    height: 20,
+    borderRadius: '50%',
+    border: '3px solid var(--border)',
+    borderTopColor: 'var(--primary)',
+    animation: 'spin 0.8s linear infinite'
   }
 };
 

@@ -99,13 +99,13 @@ async function createNotification({
       messageTa = `"${payload.task_title || ''}" பணியின் நிலை ${payload.status || ''} என புதுப்பிக்கப்பட்டுள்ளது.`;
       break;
 
-    case 'complaint_reply':
-      titleEn = 'Response Received Regarding Your Complaint';
-      messageEn = `A new response has been added regarding your complaint (Reference ID: ${payload.complaint_id || 'N/A'}). Please check the system for details.`;
-      titleSi = 'ඔබගේ පැමිණිල්ල සම්බන්ධයෙන් නව ප්‍රතිචාරයක් ලැබී ඇත';
-      titleTa = 'உங்கள் புகார் தொடர்பான புதிய பதில் பெறப்பட்டுள்ளது';
-      messageSi = `ඔබ විසින් ඉදිරිපත් කරන ලද පැමිණිල්ල (යොමු අංකය: ${payload.complaint_id || 'අදාළ නැත'}) සම්බන්ධයෙන් නව ප්‍රතිචාරයක් එකතු කර ඇත. වැඩි විස්තර සඳහා පද්ධතිය පරීක්ෂා කරන්න.`;
-      messageTa = `உங்கள் புகார் (குறிப்பு எண்: ${payload.complaint_id || 'N/A'}) தொடர்பாக புதிய பதில் சேர்க்கப்பட்டுள்ளது. கூடுதல் விவரங்களுக்கு அமைப்பைப் பார்க்கவும்.`;
+      case 'complaint_reply':
+      titleEn = 'Complaint Reply Received';
+      messageEn = `New response on complaint #${payload.complaint_id || 'N/A'}. Check system.`;
+      titleSi = 'පැමිණිල්ලට නව ප්‍රතිචාරයක් ලැබී ඇත';
+      titleTa = 'புகார் பதில் பெறப்பட்டது';
+      messageSi = `පැමිණිල්ල (#${payload.complaint_id || 'N/A'}) සම්බන්ධයෙන් නව ප්‍රතිචාරයක් ඇත.`;
+      messageTa = `புகார் (#${payload.complaint_id || 'N/A'}) தொடர்பான புதிய பதில்.`;
       break;
 
     case 'complaint_status_updated':
@@ -120,25 +120,25 @@ async function createNotification({
         statusTextSi = 'සාර්ථකව විසඳන ලදී';
         statusTextTa = 'வெற்றிகரமாக தீர்க்கப்பட்டது';
       } else if (rawStatus === 'in_progress' || rawStatus === 'inprogress' || rawStatus === 'processing') {
-        statusTextEn = 'Under Investigation / In Progress';
-        statusTextSi = 'විමර්ශනය කරමින් / ක්‍රියාත්මක වෙමින් පවතී';
-        statusTextTa = 'விசாரணையில் / செயலாக்கத்தில் உள்ளது';
+        statusTextEn = 'In Progress';
+        statusTextSi = 'ක්‍රියාත්මක වෙමින් පවතී';
+        statusTextTa = 'செயலாக்கத்தில் உள்ளது';
       } else if (rawStatus === 'closed') {
         statusTextEn = 'Closed';
         statusTextSi = 'වසා ඇත';
         statusTextTa = 'மூடப்பட்டுள்ளது';
       } else if (rawStatus === 'pending') {
         statusTextEn = 'Pending Review';
-        statusTextSi = 'සමාලෝචනය සඳහා අපේක්ෂා කෙරේ';
+        statusTextSi = 'සමාලෝචනය අපේක්ෂා කෙරේ';
         statusTextTa = 'மதிப்பாய்வுக்காக காத்திருக்கிறது';
       }
 
       titleEn = 'Complaint Status Update';
-      messageEn = `The status of your complaint has been updated to: ${statusTextEn}.`;
+      messageEn = `Complaint status changed to: ${statusTextEn}.`;
       titleSi = 'පැමිණිල්ලේ තත්ත්වය යාවත්කාලීන කරන ලදී';
       titleTa = 'புகார் நிலை புதுப்பிக்கப்பட்டுள்ளது';
-      messageSi = `ඔබගේ පැමිණිල්ලේ වත්මන් තත්ත්වය "${statusTextSi}" ලෙස යාවත්කාලීන කර ඇත.`;
-      messageTa = `உங்கள் புகாரின் நிலை "${statusTextTa}" என புதுப்பிக்கப்பட்டுள்ளது.`;
+      messageSi = `පැමිණිල්ලේ තත්ත්වය "${statusTextSi}" ලෙස වෙනස් කර ඇත.`;
+      messageTa = `புகாரின் நிலை "${statusTextTa}" என மாற்றப்பட்டுள்ளது.`;
       break;
 
       case 'privileges_updated':
