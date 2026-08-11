@@ -53,10 +53,9 @@ function StaffManagement() {
     joined_date: new Date().toISOString().split('T')[0],
     role_id: '',
     department_id: '',
-    leave_year: String(new Date().getFullYear()),
-    casual_used: '0',
-    medical_used: '0',
-    short_used: '0'
+    leave_records: [
+      { year: String(new Date().getFullYear()), casual_used: '0', medical_used: '0', short_used: '0' }
+    ]
   });
 
   const userStr = localStorage.getItem('user');
@@ -69,7 +68,7 @@ function StaffManagement() {
 
   const isAdmin = currentRole === 'Admin';
   const isSubjectOfficer = currentRole === 'Subject Officer';
-  const canRegisterStaff = isSubjectOfficer;
+  const canRegisterStaff = isSubjectOfficer || isAdmin;
 
   const staffRoleId = roles.find((r) => r.role_name === 'Staff')?.id || '';
   const [designationsList, setDesignationsList] = useState([]);
@@ -175,7 +174,6 @@ function StaffManagement() {
     loadStaff();
   }, []);
 
- 
   const loadStaff = async () => {
     try {
       setLoading(true);
@@ -185,7 +183,6 @@ function StaffManagement() {
         throw new Error('No active session');
       }
 
-      // 🌟 දැන් Frontend එක කෙලින්ම Supabase වෙත යෑම වෙනුවට Backend API එකට Request එක යවයි
       const response = await fetch(`${API_BASE}/users/all`, {
         method: 'GET',
         headers: {
@@ -197,7 +194,6 @@ function StaffManagement() {
       const result = await response.json();
 
       if (!response.ok) {
-        // System Privileges මඟින් Off කර ඇත්නම් ලැබෙන 403 දෝෂය මෙහිදී අල්ලා ගනී
         throw new Error(result.error || 'Failed to load staff members');
       }
 
@@ -235,10 +231,9 @@ function StaffManagement() {
       joined_date: new Date().toISOString().split('T')[0],
       role_id: '',
       department_id: '',
-      leave_year: String(new Date().getFullYear()),
-      casual_used: '0',
-      medical_used: '0',
-      short_used: '0'
+      leave_records: [
+        { year: String(new Date().getFullYear()), casual_used: '0', medical_used: '0', short_used: '0' }
+      ]
     });
     setDesignationsList([]);
     setFormStep(1);
@@ -283,10 +278,9 @@ function StaffManagement() {
       joined_date: staffMember.joined_date || '',
       role_id: staffMember.role_id || '',
       department_id: staffMember.department_id ? String(staffMember.department_id) : '',
-      leave_year: String(new Date().getFullYear()),
-      casual_used: '0',
-      medical_used: '0',
-      short_used: '0'
+      leave_records: [
+        { year: String(new Date().getFullYear()), casual_used: '0', medical_used: '0', short_used: '0' }
+      ]
     });
     setNicError('');
     setFormStep(1);
@@ -425,10 +419,12 @@ function StaffManagement() {
             joined_date: formData.joined_date || null,
             role_id: parseInt(staffRoleId, 10),
             department_id: parseInt(formData.department_id, 10),
-            leave_year: parseInt(formData.leave_year, 10),
-            casual_used: Number(formData.casual_used),
-            medical_used: Number(formData.medical_used),
-            short_used: formData.staff_category === 'Field Officer' ? 0 : Number(formData.short_used)
+            leave_records: formData.leave_records.map(rec => ({
+              year: parseInt(rec.year, 10),
+              casual_used: parseFloat(rec.casual_used) || 0,
+              medical_used: parseFloat(rec.medical_used) || 0,
+              short_used: formData.staff_category === 'Field Officer' ? 0 : (parseFloat(rec.short_used) || 0)
+            }))
           })
         });
 
@@ -730,7 +726,7 @@ function StaffManagement() {
         {/* MODAL */}
         {showModal && (
           <div className="modal-backdrop" onClick={closeModal}>
-            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: '720px', maxWidth: '95vw', borderRadius: '16px', overflow: 'hidden' }}>
+            <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: '760px', maxWidth: '95vw', borderRadius: '16px', overflow: 'hidden' }}>
               <div className="modal-head" style={{ backgroundColor: 'var(--primary)', padding: '20px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#fff' }}>
@@ -949,7 +945,7 @@ function StaffManagement() {
       
                   {(formStep === 3 || editing) && (
                     <div style={styles.formSectionBox}>
-                      <h4 style={styles.sectionTitle}>3. {t('employment_and_initial_leave')}</h4>
+                      <h4 style={styles.sectionTitle}>3. {t('employment_and_initial_leave', 'Employment & Leave Balances')}</h4>
                       <div style={styles.gridTwoCols}>
                         
                         {/* Staff Category */}
@@ -1033,60 +1029,106 @@ function StaffManagement() {
                             required
                           />
                         </div>
+                      </div>
 
-                        {/* Leave Balances - Only visible during Registration */}
-                        {!editing && (
-                          <>
-                            <div className="field">
-                              <label>{t('leave_year')}</label>
-                              <input
-                                type="number"
-                                className="input"
-                                value={formData.leave_year}
-                                onChange={(e) => setFormData({ ...formData, leave_year: e.target.value })}
-                                placeholder="2026"
-                                required
-                              />
-                            </div>
-                            <div className="field">
-                              <label>{t('casual_leaves_used')}</label>
-                              <input
-                                type="number"
-                                className="input"
-                                value={formData.casual_used}
-                                onChange={(e) => setFormData({ ...formData, casual_used: e.target.value })}
-                                min="0"
-                                max="21"
-                              />
-                            </div>
-                            <div className="field">
-                              <label>{t('medical_leaves_used')}</label>
-                              <input
-                                type="number"
-                                className="input"
-                                value={formData.medical_used}
-                                onChange={(e) => setFormData({ ...formData, medical_used: e.target.value })}
-                                min="0"
-                                max="24"
-                              />
-                            </div>
-                            {formData.staff_category !== 'Field Officer' && (
-                              <div className="field">
-                                <label>{t('short_leaves_used')}</label>
+                      {/* 🌟 Multi-Year Leave Records Dynamic Inputs */}
+                      {!editing && (
+                        <div style={{ marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '15px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                            <label style={{ fontWeight: 600, color: 'var(--text)' }}>{t('leave_balances_multi_year') || 'Leave Balances (Multi-Year Records)'}</label>
+                            <button
+                              type="button"
+                              className="btn btn-soft"
+                              style={{ fontSize: '12px', padding: '4px 10px' }}
+                              onClick={() => {
+                                const lastYear = parseInt(formData.leave_records[formData.leave_records.length - 1]?.year || new Date().getFullYear(), 10);
+                                setFormData(prev => ({
+                                  ...prev,
+                                  leave_records: [
+                                    ...prev.leave_records,
+                                    { year: String(lastYear + 1), casual_used: '0', medical_used: '0', short_used: '0' }
+                                  ]
+                                }));
+                              }}
+                            >
+                              {t('add_another_year') || '+ Add Another Year'}
+                            </button>
+                          </div>
+
+                          {formData.leave_records.map((rec, index) => (
+                            <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr auto', gap: '8px', marginBottom: '10px', alignItems: 'center' }}>
+                              <div>
+                                <small style={{ color: 'var(--muted)', display: 'block' }}>{t('year') || 'Year'}</small>
                                 <input
                                   type="number"
                                   className="input"
-                                  value={formData.short_used}
-                                  onChange={(e) => setFormData({ ...formData, short_used: e.target.value })}
-                                  min="0"
-                                  max="2"
+                                  value={rec.year}
+                                  onChange={(e) => {
+                                    const updated = [...formData.leave_records];
+                                    updated[index].year = e.target.value;
+                                    setFormData({ ...formData, leave_records: updated });
+                                  }}
+                                  required
                                 />
                               </div>
-                            )}
-                          </>
-                        )}
-
-                      </div>
+                              <div>
+                                <small style={{ color: 'var(--muted)', display: 'block' }}>{t('casual_used') || 'Casual Used'}</small>
+                                <input
+                                  type="number"
+                                  className="input"
+                                  value={rec.casual_used}
+                                  onChange={(e) => {
+                                    const updated = [...formData.leave_records];
+                                    updated[index].casual_used = e.target.value;
+                                    setFormData({ ...formData, leave_records: updated });
+                                  }}
+                                  min="0" max="21"
+                                />
+                              </div>
+                              <div>
+                                <small style={{ color: 'var(--muted)', display: 'block' }}>{t('medical_used') || 'Medical Used'}</small>
+                                <input
+                                  type="number"
+                                  className="input"
+                                  value={rec.medical_used}
+                                  onChange={(e) => {
+                                    const updated = [...formData.leave_records];
+                                    updated[index].medical_used = e.target.value;
+                                    setFormData({ ...formData, leave_records: updated });
+                                  }}
+                                  min="0" max="24"
+                                />
+                              </div>
+                              <div>
+                                <small style={{ color: 'var(--muted)', display: 'block' }}>{t('short_used') || 'Short Used'}</small>
+                                <input
+                                  type="number"
+                                  className="input"
+                                  value={rec.short_used}
+                                  onChange={(e) => {
+                                    const updated = [...formData.leave_records];
+                                    updated[index].short_used = e.target.value;
+                                    setFormData({ ...formData, leave_records: updated });
+                                  }}
+                                  min="0" max="2"
+                                />
+                              </div>
+                              {formData.leave_records.length > 1 && (
+                                <button
+                                  type="button"
+                                  style={{ background: 'transparent', border: 'none', color: 'red', cursor: 'pointer', fontSize: '18px', marginTop: '16px' }}
+                                  onClick={() => {
+                                    const updated = formData.leave_records.filter((_, i) => i !== index);
+                                    setFormData({ ...formData, leave_records: updated });
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -1185,7 +1227,6 @@ const styles = {
   genderRow: { display: 'flex', alignItems: 'center', color: 'var(--muted)', fontSize: '13.5px', marginTop: '4px' },
   typeBadge: { padding: '4px 10px', backgroundColor: 'var(--gray-100)', borderRadius: 6, fontSize: 12, color: 'var(--text)', fontWeight: 600 },
   statusBtn: { padding: '6px 12px', border: 'none', borderRadius: 6, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 },
-  editBtn: { width: 36, height: 36, backgroundColor: colors.primary, color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   formSectionBox: { backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 },
   sectionTitle: { fontSize: 14, fontWeight: 700, color: 'var(--primary)', margin: '0 0 12px 0', textTransform: 'uppercase', letterSpacing: '0.5px' },
   gridTwoCols: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 },

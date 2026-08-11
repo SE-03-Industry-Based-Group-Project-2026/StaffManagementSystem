@@ -764,5 +764,14 @@
   "success": "Success",
   "error": "Error",
   "saved_successfully": "Saved successfully.",
-  "update_failed": "Update failed."
+  "update_failed": "Update failed.",
+  "year": "Year",
+  "leave_balance_chart": "Leave Balance Chart",
+  "no_leave_balances": "No leave balances found for this year.",
+  "my_leave_history": "My Leave History",
+  "add_another_year": "+ Add Another Year",
+  "leave_balances_multi_year": "Leave Balances (Multi-Year Records)",
+  "casual_used": "Casual Used",
+  "medical_used": "Medical Used",
+  "short_used": "Short Used"
 }

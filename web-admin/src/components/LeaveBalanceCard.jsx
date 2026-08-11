@@ -7,6 +7,7 @@ export default function LeaveBalanceCard({ t, tr, lang, refreshTrigger }) {
   const [balances, setBalances] = useState([]);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
 
   const getAuthToken = async () => {
     const { data: { session }, error } = await supabase.auth.getSession();
@@ -21,7 +22,7 @@ export default function LeaveBalanceCard({ t, tr, lang, refreshTrigger }) {
       setLoading(true);
       const token = await getAuthToken();
       
-      const resBalance = await fetch(`${API_BASE}/leave/my-leave-balances`, {
+      const resBalance = await fetch(`${API_BASE}/leave/my-leave-balances?year=${selectedYear}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const resultBalance = await resBalance.json();
@@ -45,7 +46,7 @@ export default function LeaveBalanceCard({ t, tr, lang, refreshTrigger }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedYear]);
 
   useEffect(() => {
     fetchData();
@@ -62,24 +63,38 @@ export default function LeaveBalanceCard({ t, tr, lang, refreshTrigger }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginTop: 16 }}>
       <div className="pro-card" style={{ padding: 24, background: 'var(--card)', borderRadius: 16, border: '1px solid var(--border)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
-        <h3 style={{ marginBottom: 20, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span>📊</span> {t('leave_balance_chart') || tr('leave_balance_chart', 'Leave Balance Chart')}
-        </h3>
+        
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
+          <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>📊</span> {t('leave_balance_chart') || tr('leave_balance_chart', 'Leave Balance Chart')}
+          </h3>
+          
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>{tr('year', 'Year')}:</label>
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(e.target.value)}
+              className="select"
+              style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', cursor: 'pointer' }}
+            >
+              {[2024, 2025, 2026, 2027, 2028].map((yr) => (
+                <option key={yr} value={yr}>{yr}</option>
+              ))}
+            </select>
+          </div>
+        </div>
         
         {balances.length === 0 ? (
-          <p style={{ color: 'var(--text-secondary)', fontSize: 13, textAlign: 'center' }}>{t('no_leave_balances') || tr('no_leave_balances', 'No leave balances found.')}</p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 13, textAlign: 'center' }}>{t('no_leave_balances') || tr('no_leave_balances', 'No leave balances found for this year.')}</p>
         ) : (
           <div style={{ display: 'flex', alignItems: 'flex-end', marginTop: 15, paddingBottom: 10, overflowX: 'auto' }}>
             
-            {/* Y-Axis */}
             <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: `${chartHeight}px`, paddingRight: 8, borderRight: '2px solid var(--border)', fontSize: '10px', color: 'var(--text-secondary)', textAlign: 'right', minWidth: '25px' }}>
               {[25, 20, 15, 10, 5, 0].map(n => <span key={n}>{n}</span>)}
             </div>
 
-            {/* Bars Area */}
             <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', flex: 1, height: `${chartHeight}px`, position: 'relative', borderBottom: '2px solid var(--border)', paddingLeft: '15px', paddingRight: '15px', gap: '20px' }}>
               
-              {/* Grid Lines */}
               <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', pointerEvents: 'none', opacity: 0.15 }}>
                 {[1, 2, 3, 4, 5].map(i => <div key={i} style={{ borderBottom: '1px dashed var(--text)', width: '100%' }}></div>)}
               </div>
@@ -119,7 +134,6 @@ export default function LeaveBalanceCard({ t, tr, lang, refreshTrigger }) {
         )}
       </div>
 
-      {/* Leave History Table */}
       <div className="pro-card" style={{ padding: 20, background: 'var(--card)', borderRadius: 14, border: '1px solid var(--border)' }}>
         <h3 style={{ marginBottom: 16, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)' }}>
           {lang === 'si' ? 'මගේ නිවාඩු ඉතිහාසය' : lang === 'ta' ? 'எனது விடுப்பு வரலாறு' : 'My Leave History'}

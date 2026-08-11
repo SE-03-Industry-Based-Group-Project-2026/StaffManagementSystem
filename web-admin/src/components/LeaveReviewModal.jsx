@@ -16,14 +16,41 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
   const [employeeBalances, setEmployeeBalances] = useState([]);
   const [employeeHistory, setEmployeeHistory] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
+  const [reviewYear, setReviewYear] = useState(String(new Date().getFullYear()));
+  const [hasSignature, setHasSignature] = useState(true); // 🌟 අත්සන ඇත්දැයි පරීක්ෂා කිරීමට ස්ටේට් එකක්
 
   const isLabourer = String(selected.users?.staff_category || '').toLowerCase() === 'labour' || 
                      String(selected.users?.designations?.designation_en || '').toLowerCase().includes('labour') ||
                      String(selected.users?.designations?.designation_si || '').includes('කම්කරු') ||
                      String(selected.users?.designations?.designation_ta || '').includes('தொழிலாளி');
-  
+ 
   const isShortLeave = selected.leave_types?.name_en?.toLowerCase().includes('short');
   const employeeId = selected.user_id || selected.users?.id;
+
+ 
+  useEffect(() => {
+    const checkUserSignature = async () => {
+      const userStr = localStorage.getItem('user');
+      if (userStr) {
+        try {
+          const parsedUser = JSON.parse(userStr);
+         
+          const { data, error } = await supabase
+            .from('users')
+            .select('signature_url')
+            .eq('id', parsedUser.id)
+            .single();
+
+          if (!error && data) {
+            setHasSignature(!!data.signature_url);
+          }
+        } catch (e) {
+          console.error('Error checking signature:', e);
+        }
+      }
+    };
+    checkUserSignature();
+  }, []);
 
   const getModalAttachmentUrl = (rawUrl) => {
     if (!rawUrl) return null;
@@ -55,7 +82,8 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
         const { data: balanceData, error: balanceError } = await supabase
           .from('user_leave_balances')
           .select('*, leave_types(*)')
-          .eq('user_id', employeeId);
+          .eq('user_id', employeeId)
+          .eq('year', reviewYear);
         
         if (!balanceError) {
           const filtered = (balanceData || []).filter(item => {
@@ -83,9 +111,12 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
     };
 
     fetchEmployeeData();
-  }, [employeeId]);
+  }, [employeeId, reviewYear]);
 
   const canApprove = () => {
+    // 🌟 අත්සනක් නොමැති නම් අනුමත කිරීමට ඉඩ නොදේ
+    if (!hasSignature) return false;
+
     const status = selected.status;
     if (role === 'Subject Officer') return !isLabourer && status === 'Pending';
     if (role === 'CC Officer') return !isLabourer && status === 'Subject Approved';
@@ -133,6 +164,14 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
         </div>
 
         <div className="modal-body" style={{ maxHeight: '80vh', overflowY: 'auto' }}>
+          
+          {/* 🌟 අත්සන නොමැති නම් පෙන්වන අනතුරු ඇඟවීමේ පණිවිඩය */}
+          {!hasSignature && (
+            <div style={{ padding: '12px 16px', backgroundColor: '#fee2e2', color: '#dc2626', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', fontWeight: '600' }}>
+              ⚠️ {tr('signature_required_warning', 'You must save your digital signature in your profile before you can approve leave requests.')}
+            </div>
+          )}
+
           <div className="pro-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))' }}>
             <p style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}><b>{t('employee')}:</b><br />{selected.users?.full_name}</p>
             <p style={{ wordBreak: 'break-all', overflowWrap: 'break-word' }}><b>{t('email')}:</b><br />{selected.users?.email || '-'}</p>
@@ -164,26 +203,40 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
           )}
 
           <div className="pro-card" style={{ marginTop: 16, padding: 20, background: 'var(--bg-primary)', borderRadius: 16, border: '1px solid var(--border)' }}>
-            <h4 style={{ marginBottom: 16, fontSize: '15px', fontWeight: 700, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span></span> {`${selected.users?.full_name} ${tr('leave_balances_title', 'Leave Balances Graph')}`}
-            </h4>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+              <h4 style={{ margin: 0, fontSize: '15px', fontWeight: 700, color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span></span> {`${selected.users?.full_name} ${tr('leave_balances_title', 'Leave Balances Graph')}`}
+              </h4>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-secondary)' }}>{tr('year', 'Year')}:</label>
+                <select
+                  value={reviewYear}
+                  onChange={(e) => setReviewYear(e.target.value)}
+                  className="select"
+                  style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '6px', cursor: 'pointer' }}
+                >
+                  {[2024, 2025, 2026, 2027, 2028].map((yr) => (
+                    <option key={yr} value={yr}>{yr}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
             
             {loadingData ? (
               <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{tr('loading_balances', 'Loading balances...')}</p>
             ) : employeeBalances.length === 0 ? (
-              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{tr('no_leave_balances_employee','No leave balances found for this employee.')}</p>
+              <p style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>{tr('no_leave_balances_employee','No leave balances found for this employee for this year.')}</p>
             ) : (
               <div style={{ display: 'flex', alignItems: 'flex-end', marginTop: 15, paddingBottom: 10, overflowX: 'auto' }}>
                 
-                {/* Y-Axis */}
                 <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', height: `${chartHeight}px`, paddingRight: 8, borderRight: '2px solid var(--border)', fontSize: '10px', color: 'var(--text-secondary)', textAlign: 'right', minWidth: '25px' }}>
                   {[25, 20, 15, 10, 5, 0].map(n => <span key={n}>{n}</span>)}
                 </div>
 
-                {/* Bars Area */}
                 <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'flex-end', flex: 1, height: `${chartHeight}px`, position: 'relative', borderBottom: '2px solid var(--border)', paddingLeft: '15px', paddingRight: '15px', gap: '20px' }}>
                   
-                  {/* Grid Lines */}
                   <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', pointerEvents: 'none', opacity: 0.15 }}>
                     {[1, 2, 3, 4, 5].map(i => <div key={i} style={{ borderBottom: '1px dashed var(--text)', width: '100%' }}></div>)}
                   </div>

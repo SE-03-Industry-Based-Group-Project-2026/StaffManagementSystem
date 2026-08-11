@@ -39,7 +39,6 @@ function Layout({ children }) {
     }
   });
 
-  // Listen to user updates (like profile photo change)
   useEffect(() => {
     const handleUserUpdate = () => {
       try {
@@ -64,7 +63,6 @@ function Layout({ children }) {
   const [langDropdownOpen, setLangDropdownOpen] = useState(false);
   const langDropdownRef = useRef(null);
 
-  // Click outside to close dropdowns
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (langDropdownRef.current && !langDropdownRef.current.contains(event.target)) {
@@ -115,14 +113,37 @@ function Layout({ children }) {
   };
 
   const markAllAsRead = async () => {
-    await supabase
-      .from('notifications')
-      .update({ is_read: true, read_at: new Date().toISOString() })
-      .eq('user_id', user.id)
-      .eq('is_read', false);
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ is_read: true, read_at: new Date().toISOString() })
+        .eq('user_id', user.id)
+        .eq('is_read', false);
 
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-    setUnreadCount(0);
+      if (!error) {
+        setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+        setUnreadCount(0);
+      }
+    } catch (err) {
+      console.error('Error marking all notifications as read:', err);
+    }
+  };
+
+  const deleteNotification = async (id, e) => {
+    e.stopPropagation();
+
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', id);
+
+    if (!error) {
+      setNotifications((prev) => {
+        const updated = prev.filter((n) => n.id !== id);
+        setUnreadCount(updated.filter((n) => !n.is_read).length);
+        return updated;
+      });
+    }
   };
 
   const getNotificationContent = (notification) => {
@@ -220,6 +241,10 @@ function Layout({ children }) {
 
   const role = String(user.role || user.role_name || user.roles?.role_name || 'Admin').trim();
   const isAdmin = role.toLowerCase() === 'admin';
+  const roleLower = role.toLowerCase();
+  
+  const isManagementRole = ['chairman', 'secretary', 'subject officer', 'cc officer'].includes(roleLower);
+  const isChairmanOrSecretary = ['chairman', 'secretary'].includes(roleLower);
 
   const tr = (key, fallback) => {
     const value = t(key);
@@ -256,37 +281,37 @@ function Layout({ children }) {
             <AppIcon name="dashboard" size={19} /> <span>{tr('dashboard', 'Dashboard')}</span>
           </button>
 
-          {/* Admin Only: Staff Management & Departments */}
-          {isAdmin && (
-            <>
-              <div className="menu-group">
-                <button
-                  type="button"
-                  className={['/staff', '/profile-requests'].includes(location.pathname) ? 'group-title active-group' : 'group-title'}
-                  onClick={() => setStaffMenuOpen(!staffMenuOpen)}
-                >
-                  <AppIcon name="users" size={19} /> <span>{tr('staff_management', 'Staff Management')}</span>
-                  <span style={{ marginLeft: 'auto', fontSize: '10px' }}>{staffMenuOpen ? '▼' : '►'}</span>
-                </button>
-                {staffMenuOpen && (
-                  <div className="sub-menu" style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column' }}>
-                    <button className={location.pathname === '/staff' ? 'active' : ''} onClick={() => navigate('/staff')} type="button">
-                      {tr('staff_list', 'Staff List')}
-                    </button>
+          {(isAdmin || isManagementRole) && (
+            <div className="menu-group">
+              <button
+                type="button"
+                className={['/staff', '/profile-requests'].includes(location.pathname) ? 'group-title active-group' : 'group-title'}
+                onClick={() => setStaffMenuOpen(!staffMenuOpen)}
+              >
+                <AppIcon name="users" size={19} /> <span>{tr('staff_management', 'Staff Management')}</span>
+                <span style={{ marginLeft: 'auto', fontSize: '10px' }}>{staffMenuOpen ? '▼' : '►'}</span>
+              </button>
+              {staffMenuOpen && (
+                <div className="sub-menu" style={{ paddingLeft: '20px', display: 'flex', flexDirection: 'column' }}>
+                  <button className={location.pathname === '/staff' ? 'active' : ''} onClick={() => navigate('/staff')} type="button">
+                    {tr('staff_list', 'Staff List')}
+                  </button>
+                  {isAdmin && (
                     <button className={location.pathname === '/profile-requests' ? 'active' : ''} onClick={() => navigate('/profile-requests')} type="button">
                       {tr('profile_requests', 'Profile Requests')}
                     </button>
-                  </div>
-                )}
-              </div>
-
-              <button className={location.pathname === '/departments' ? 'active' : ''} onClick={() => navigate('/departments')} type="button">
-                <AppIcon name="building" size={19} /><span>{tr('departments', 'Departments')}</span>
-              </button>
-            </>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
-          {/* Leave Management (For non-Admins) */}
+          {isAdmin && (
+            <button className={location.pathname === '/departments' ? 'active' : ''} onClick={() => navigate('/departments')} type="button">
+              <AppIcon name="building" size={19} /><span>{tr('departments', 'Departments')}</span>
+            </button>
+          )}
+
           {!isAdmin && (
             <div className="menu-group">
               <button
@@ -317,8 +342,7 @@ function Layout({ children }) {
             </button>
           )}
 
-          {/* Chairman & Secretary Only: Complaints & Tasks */}
-          {(role === 'Chairman' || role === 'Secretary') && (
+          {isChairmanOrSecretary && (
             <>
               <button className={location.pathname === '/complaints' ? 'active' : ''} onClick={() => navigate('/complaints')} type="button">
                 <AppIcon name="alert" size={19} /><span>{tr('complaints', 'Complaints')}</span>
@@ -329,14 +353,12 @@ function Layout({ children }) {
             </>
           )}
 
-          {/* Reports for Chairman, Secretary, Subject Officer, and CC Officer */}
-          {(role === 'Chairman' || role === 'Secretary' || role === 'Subject Officer' || role === 'CC Officer') && (
+          {isManagementRole && (
             <button className={location.pathname === '/reports' ? 'active' : ''} onClick={() => navigate('/reports')} type="button">
               <AppIcon name="report" size={19} /> <span>{tr('reports', 'Reports')}</span>
             </button>
           )}
 
-          {/* Admin Only: Audit Logs & System Privileges */}
           {isAdmin && (
             <>
               <button className={location.pathname === '/audit-logs' ? 'active' : ''} onClick={() => navigate('/audit-logs')} type="button">
@@ -366,10 +388,8 @@ function Layout({ children }) {
             </div>
           </div>
 
-          {/* Topbar Right: Language Dropdown, Popup Notification Bell, and Profile Icon */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
             
-            {/* Language Dropdown */}
             <div ref={langDropdownRef} style={{ position: 'relative' }}>
               <button
                 onClick={() => setLangDropdownOpen(!langDropdownOpen)}
@@ -448,7 +468,6 @@ function Layout({ children }) {
               )}
             </div>
 
-            {/* Notification Bell Dropdown */}
             <div ref={notifDropdownRef} style={{ position: 'relative' }}>
               <button
                 onClick={() => setNotifDropdownOpen(!notifDropdownOpen)}
@@ -502,18 +521,16 @@ function Layout({ children }) {
                     border: '1px solid #e2e8f0',
                     borderRadius: '14px',
                     boxShadow: '0 12px 28px rgba(0, 0, 0, 0.12)',
-                    width: '360px',
+                    width: '380px',
                     maxHeight: '480px',
                     overflowY: 'auto',
                     zIndex: 1000,
                     padding: '16px'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
-                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: '#0f172a' }}>
-                      {t('notifications') || 'Notifications'}
-                    </h3>
-                    {unreadCount > 0 && (
+                  {/* "Mark all as read" button on top */}
+                  {unreadCount > 0 && (
+                    <div style={{ marginBottom: '10px', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9', textAlign: 'right' }}>
                       <button
                         onClick={markAllAsRead}
                         type="button"
@@ -522,13 +539,43 @@ function Layout({ children }) {
                           border: 'none',
                           color: '#8B0000',
                           fontSize: '12px',
-                          fontWeight: '600',
-                          cursor: 'pointer'
+                          fontWeight: '700',
+                          cursor: 'pointer',
+                          padding: 0,
+                          textDecoration: 'underline'
                         }}
                       >
                         {t('mark_all_read') || 'Mark all as read'}
                       </button>
-                    )}
+                    </div>
+                  )}
+
+                  {/* Header: Title and Close Button */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
+                    <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: '#0f172a' }}>
+                      {t('notifications') || 'Notifications'}
+                    </h3>
+                    
+                    <button
+                      onClick={() => setNotifDropdownOpen(false)}
+                      type="button"
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        color: '#64748b',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '4px',
+                        borderRadius: '50%',
+                        transition: 'background 0.2s',
+                        flexShrink: 0
+                      }}
+                      title="Close"
+                    >
+                      <AppIcon name="x" size={18} />
+                    </button>
                   </div>
 
                   {notifications.length === 0 ? (
@@ -550,10 +597,33 @@ function Layout({ children }) {
                               border: '1px solid #e2e8f0',
                               borderLeft: `4px solid ${n.is_read ? '#cbd5e1' : '#8B0000'}`,
                               cursor: 'pointer',
-                              transition: 'background 0.2s'
+                              transition: 'background 0.2s',
+                              position: 'relative'
                             }}
                           >
-                            <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '4px' }}>
+                            <button
+                              type="button"
+                              onClick={(e) => deleteNotification(n.id, e)}
+                              title="Delete"
+                              style={{
+                                position: 'absolute',
+                                top: '8px',
+                                right: '8px',
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                color: '#94a3b8',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: '2px',
+                                borderRadius: '50%'
+                              }}
+                            >
+                              <AppIcon name="x" size={14} />
+                            </button>
+
+                            <div style={{ fontSize: '13px', fontWeight: '700', color: '#0f172a', marginBottom: '4px', paddingRight: '16px' }}>
                               {title}
                             </div>
                             <div style={{ fontSize: '12px', color: '#475569', lineHeight: '1.4', marginBottom: '6px' }}>
@@ -591,7 +661,6 @@ function Layout({ children }) {
               )}
             </div>
 
-            {/* Profile Avatar / Link */}
             <button
               onClick={() => navigate('/my-profile')}
               type="button"

@@ -92,6 +92,23 @@ function Notifications() {
     }
   };
 
+  // 🌟 නොටිෆිකේෂන් එක මකා දැමීම සඳහා (Delete/Close)
+  const deleteNotification = async (id, e) => {
+    e.stopPropagation(); // Card එකේ click event එක ක්‍රියාත්මක වීම වැළැක්වීමට
+
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', id);
+
+    if (!error) {
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+      showSuccess(t('notification_deleted') || 'Notification removed');
+    } else {
+      showError(error.message);
+    }
+  };
+
   const getNotificationContent = (notification) => {
     let finalTitle = language === 'si' 
       ? (notification.title_si || notification.title_en || notification.title)
@@ -167,6 +184,7 @@ function Notifications() {
       return;
     }
   };
+
   return (
     <Layout>
       <PageHero
@@ -233,15 +251,43 @@ function Notifications() {
                     borderLeft: `4px solid ${
                       n.is_read ? 'var(--gray-300)' : '#8B0000'
                     }`,
-                    cursor: 'pointer'
+                    cursor: 'pointer',
+                    position: 'relative' // 🌟 Close icon එක නිවැරදිව තැබීමට
                   }}
                 >
+                  {/* 🌟 Close / Delete Icon Button */}
+                  <button
+                    type="button"
+                    onClick={(e) => deleteNotification(n.id, e)}
+                    title={tr('delete', 'Delete')}
+                    style={{
+                      position: 'absolute',
+                      top: '12px',
+                      right: '12px',
+                      background: 'transparent',
+                      border: 'none',
+                      cursor: 'pointer',
+                      color: 'var(--muted)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '4px',
+                      borderRadius: '50%',
+                      transition: 'background 0.2s'
+                    }}
+                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--gray-200)'}
+                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  >
+                    <AppIcon name="x" size={16} />
+                  </button>
+
                   <div
                     style={{
                       display: 'flex',
                       justifyContent: 'space-between',
                       gap: 16,
-                      alignItems: 'flex-start'
+                      alignItems: 'flex-start',
+                      paddingRight: '24px' // Close icon එකට ඉඩ තැබීමට
                     }}
                   >
                     <div>
