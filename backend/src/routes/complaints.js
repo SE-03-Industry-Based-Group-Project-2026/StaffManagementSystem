@@ -1,244 +1,322 @@
 const express = require('express');
 const router = express.Router();
-const supabase = require('../config/supabase');
-const { authenticate, checkRole } = require('../middleware/auth');
 
-// Submit complaint (Staff)
-router.post('/submit', authenticate, checkRole(['Staff']), async (req, res) => {
-    const { department_id, title, description } = req.body;
-    
-    const { data: user } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', req.user.id)
-        .single();
-    
-    const { data, error } = await supabase
+const supabase = require('../config/supabase');
+const { authenticate } = require('../middleware/auth');
+const { checkPrivilege } = require('../middleware/checkPrivilege');
+const { translateToAllLanguages } = require('../services/translationService');
+const { logAudit } = require('../services/auditService');
+const { createNotification } = require('../services/notificationService');
+
+async function getCurrentUser(authId) {
+  const { data, error } = await supabase
+    .from('users')
+    .select(`
+      id,
+      full_name,
+      email,
+      department_id,
+      roles(role_name)
+    `)
+    .eq('auth_id', authId)
+    .single();
+
+  if (error || !data) {
+    return null;
+  }
+  return data;
+}
+
+/*
+ * Submit complaint - Staff
+ */
+router.post(
+  '/submit',
+  authenticate,
+  checkPrivilege('complaints_add'),
+  async (req, res) => {
+    try {
+      const { department_id, title, description } = req.body;
+      const cleanTitle = String(title || '').trim();
+      const cleanDescription = String(description || '').trim();
+
+      if (!department_id) return res.status(400).json({ error: 'Department is required' });
+      if (!cleanTitle) return res.status(400).json({ error: 'Complaint title is required' });
+      if (!cleanDescription) return res.status(400).json({ error: 'Complaint description is required' });
+
+      const currentUser = await getCurrentUser(req.user.id);
+      if (!currentUser) return res.status(404).json({ error: 'User not found' });
+
+      const [translatedTitle, translatedDescription] = await Promise.all([
+        translateToAllLanguages(cleanTitle),
+        translateToAllLanguages(cleanDescription)
+      ]);
+
+      const { data, error } = await supabase
         .from('complaints')
-        .insert([{
-            user_id: user.id,
-            department_id,
-            title,
-            description,
+        .insert([
+          {
+            user_id: currentUser.id,
+            department_id: Number(department_id),
+            title: translatedTitle.en,
+            description: translatedDescription.en,
+            title_en: translatedTitle.en,
+            title_si: translatedTitle.si,
+            title_ta: translatedTitle.ta,
+            description_en: translatedDescription.en,
+            description_si: translatedDescription.si,
+            description_ta: translatedDescription.ta,
             status: 'Open',
-            created_at: new Date()
-        }])
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }
+        ])
         .select()
         .single();
-    
-    if (error) {
-        return res.status(400).json({ error: error.message });
-    }
-    
-    // Log audit
-    await supabase.from('audit_logs').insert([{
-        user_id: user.id,
-        action: 'SUBMIT_COMPLAINT',
-        entity_type: 'complaints',
-        entity_id: data.id
-    }]);
-    
-    res.json({ success: true, data });
-});
 
-// Get my complaints (Staff)
-router.get('/my-complaints', authenticate, checkRole(['Staff']), async (req, res) => {
-    const { data: user } = await supabase
-        .from('users')
-        .select('id')
-        .eq('auth_id', req.user.id)
-        .single();
-    
-    const { data, error } = await supabase
-        .from('complaints')
-        .select('*, departments(department_name)')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-    
-    if (error) {
-        return res.status(400).json({ error: error.message });
-    }
-    
-    res.json(data);
-});
+      if (error) return res.status(400).json({ error: error.message });
 
-// Get all complaints (Admin/Supervisor)
-router.get('/all', authenticate, checkRole(['Supervisor', 'Admin', 'Secretary', 'Chairman', 'Praja Officer']), async (req, res) => {
-    let query = supabase
+      await logAudit(currentUser.id, 'COMPLAINT_CREATED', 'complaints', data.id, null, {
+        title_en: translatedTitle.en,
+        title_si: translatedTitle.si,
+        title_ta: translatedTitle.ta
+      });
+
+      return res.status(201).json({ success: true, data });
+    } catch (error) {
+      console.error('Submit complaint error:', error);
+      return res.status(500).json({ error: error.message || 'Complaint could not be submitted' });
+    }
+  }
+);
+
+/*
+ * Get all permitted complaints
+ */
+router.get(
+  '/all',
+  authenticate,
+  checkPrivilege('complaints_view'),
+  async (req, res) => {
+    try {
+      const currentUser = await getCurrentUser(req.user.id);
+      if (!currentUser) return res.status(404).json({ error: 'User not found' });
+
+      const role = currentUser.roles?.role_name || '';
+
+      let query = supabase
         .from('complaints')
         .select(`
-  *,
-  users!complaints_user_id_fkey(full_name, email),
-  departments!complaints_department_id_fkey(department_name, department_type)
-`)
+          *,
+          users!complaints_user_id_fkey(full_name, email),
+          departments!complaints_department_id_fkey(department_name, department_name_si, department_name_ta, department_type)
+        `)
         .order('created_at', { ascending: false });
-    
-    // Praja Officer sees only Library & Preschool
-    if (req.userRole === 'Praja Officer') {
-        query = query.in('departments.department_type', ['Library', 'Preschool']);
-    }
-    
-    // Supervisor sees only their department
-    if (req.userRole === 'Supervisor') {
-        query = query.eq('department_id', req.userData.department_id);
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) {
-        return res.status(400).json({ error: error.message });
-    }
-    
-    res.json(data);
-});
+      
+      if (role === 'Chairman' || role === 'Secretary') {
+        const { data: recipients, error: recipientError } = await supabase
+          .from('complaint_recipients')
+          .select('complaint_id')
+          .eq('recipient_id', currentUser.id);
 
-// Reply to complaint (Admin/Supervisor)
-router.post('/reply', authenticate, checkRole(['Supervisor', 'Admin', 'Secretary', 'Chairman']), async (req, res) => {
-    const { complaint_id, reply_message } = req.body;
-    
-    const { data, error } = await supabase
-        .from('complaint_replies')
-        .insert([{
-            complaint_id,
-            replied_by: req.userData.id,
-            reply_message,
-            created_at: new Date()
-        }])
-        .select();
-    
-    if (error) {
-        return res.status(400).json({ error: error.message });
+        if (recipientError) return res.status(400).json({ error: recipientError.message });
+
+        const complaintIds = recipients.map(r => r.complaint_id);
+        if (complaintIds.length === 0) return res.json([]);
+
+        query = query.in('id', complaintIds);
+      }
+
+      if (role === 'Supervisor' && currentUser.department_id) {
+        query = query.eq('department_id', currentUser.department_id);
+      }
+
+      const { data, error } = await query;
+      if (error) return res.status(400).json({ error: error.message });
+
+      return res.json(data || []);
+    } catch (error) {
+      console.error('Get complaints error:', error);
+      return res.status(500).json({ error: error.message });
     }
-    
-    // Update complaint status
-    await supabase
+  }
+);
+
+/*
+ * Reply to complaint
+ */
+router.post(
+  '/reply',
+  authenticate,
+  checkPrivilege('complaints_reply'),
+  async (req, res) => {
+    try {
+      const { complaint_id, reply_message } = req.body;
+      const cleanReply = String(reply_message || '').trim();
+
+      if (!complaint_id) return res.status(400).json({ error: 'Complaint ID is required' });
+      if (!cleanReply) return res.status(400).json({ error: 'Reply message is required' });
+
+      const currentUser = await getCurrentUser(req.user.id);
+      if (!currentUser) return res.status(404).json({ error: 'User not found' });
+
+      const { data: complaint, error: complaintError } = await supabase
         .from('complaints')
-        .update({ status: 'In Progress', updated_at: new Date() })
-        .eq('id', complaint_id);
-    
-    // Get complaint for notification
-    const { data: complaint } = await supabase
-        .from('complaints')
-        .select('user_id')
+        .select(`*, departments(department_name, department_type)`)
         .eq('id', complaint_id)
         .single();
-    
-    // Notify staff
-    await supabase.from('notifications').insert([{
-        user_id: complaint.user_id,
-        title: 'Complaint Reply',
-        message: 'A reply has been added to your complaint',
-        is_auto_generated: true
-    }]);
-    
-    // Log audit
-    await supabase.from('audit_logs').insert([{
-        user_id: req.userData.id,
-        action: 'REPLY_COMPLAINT',
-        entity_type: 'complaint_replies',
-        entity_id: data[0].id
-    }]);
-    
-    res.json({ success: true, data });
-});
 
-// Update complaint status
-router.put('/status/:id', authenticate, checkRole(['Admin', 'Secretary', 'Chairman', 'Praja Officer']), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, remark } = req.body;
+      if (complaintError || !complaint) return res.status(404).json({ error: 'Complaint not found' });
 
-    const allowedStatuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
-    if (!allowedStatuses.includes(status)) {
-      return res.status(400).json({ error: 'Invalid complaint status' });
-    }
+      const translatedReply = await translateToAllLanguages(cleanReply);
 
-    const { data: complaint } = await supabase
-      .from('complaints')
-     .select(`
-  *,
-  users!complaints_user_id_fkey(full_name),
-  departments!complaints_department_id_fkey(department_name, department_type)
-`)
-      .eq('id', id)
-      .single();
-
-    if (!complaint) {
-      return res.status(404).json({ error: 'Complaint not found' });
-    }
-
-    if (req.userRole === 'Praja Officer') {
-      const deptType = complaint.departments?.department_type;
-      if (!['Library', 'Preschool'].includes(deptType)) {
-        return res.status(403).json({ error: 'Praja Officer can update only Library or Preschool complaints' });
-      }
-    }
-
-    const { data, error } = await supabase
-      .from('complaints')
-      .update({
-        status,
-        updated_at: new Date()
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) return res.status(400).json({ error: error.message });
-
-    if (remark && remark.trim()) {
-      await supabase.from('complaint_replies').insert([{
-        complaint_id: Number(id),
-        replied_by: req.userData.id,
-        reply_message: remark,
-        created_at: new Date()
-      }]);
-    }
-
-    await supabase.from('notifications').insert([{
-      user_id: complaint.user_id,
-      title: 'Complaint Status Updated',
-      message: `Your complaint "${complaint.title}" is now ${status}.${remark ? ` Note: ${remark}` : ''}`,
-      is_auto_generated: true,
-      is_read: false,
-      notification_type: 'Complaint',
-      related_entity: 'complaints',
-      related_id: Number(id),
-      created_at: new Date()
-    }]);
-
-    await supabase.from('audit_logs').insert([{
-      user_id: req.userData.id,
-      action: `UPDATE_COMPLAINT_STATUS_${status.toUpperCase().replace(/\s+/g, '_')}`,
-      entity_type: 'complaints',
-      entity_id: Number(id),
-      new_value: status
-    }]);
-
-    res.json({ success: true, data });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Get replies for a complaint
-router.get('/replies/:complaint_id', authenticate, async (req, res) => {
-    const { complaint_id } = req.params;
-    
-    const { data, error } = await supabase
+      const { data, error } = await supabase
         .from('complaint_replies')
-        .select(`
-  *,
-  users!complaint_replies_replied_by_fkey(full_name)
-`)
+        .insert([
+          {
+            complaint_id: Number(complaint_id),
+            replied_by: currentUser.id,
+            reply_message: translatedReply.en,
+            reply_message_en: translatedReply.en,
+            reply_message_si: translatedReply.si,
+            reply_message_ta: translatedReply.ta,
+            created_at: new Date().toISOString()
+          }
+        ])
+        .select()
+        .single();
+
+      if (error) return res.status(400).json({ error: error.message });
+
+      await supabase
+        .from('complaints')
+        .update({ status: 'In Progress', updated_at: new Date().toISOString() })
+        .eq('id', complaint_id);
+
+      await createNotification({
+        userId: complaint.user_id,
+        notificationKey: 'complaint_reply',
+        payload: {},
+        notificationType: 'Complaint',
+        relatedEntity: 'complaints',
+        relatedId: Number(complaint_id),
+        createdBy: currentUser.id
+      });
+
+      await logAudit(currentUser.id, 'COMPLAINT_REPLIED', 'complaint_replies', data.id, null, {
+        reply: translatedReply.en
+      });
+
+      return res.json({ success: true, data });
+    } catch (error) {
+      console.error('Reply complaint error:', error);
+      return res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+/*
+ * Update complaint status
+ */
+router.put(
+  '/status/:id',
+  authenticate,
+  checkPrivilege('complaints_assign'),
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, remark } = req.body;
+
+      const allowedStatuses = ['Open', 'In Progress', 'Resolved', 'Closed'];
+      if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({ error: 'Invalid complaint status' });
+      }
+
+      const { data: complaint, error: complaintError } = await supabase
+        .from('complaints')
+        .select(`*, users!complaints_user_id_fkey(full_name), departments!complaints_department_id_fkey(department_name, department_type)`)
+        .eq('id', id)
+        .single();
+
+      if (complaintError || !complaint) return res.status(404).json({ error: 'Complaint not found' });
+
+      const currentUser = await getCurrentUser(req.user.id);
+      if (!currentUser) return res.status(404).json({ error: 'User not found' });
+
+      const { data, error } = await supabase
+        .from('complaints')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) return res.status(400).json({ error: error.message });
+
+      const cleanRemark = String(remark || '').trim();
+      if (cleanRemark) {
+        const translatedRemark = await translateToAllLanguages(cleanRemark);
+        await supabase
+          .from('complaint_replies')
+          .insert([
+            {
+              complaint_id: Number(id),
+              replied_by: currentUser.id,
+              reply_message: translatedRemark.en,
+              reply_message_en: translatedRemark.en,
+              reply_message_si: translatedRemark.si,
+              reply_message_ta: translatedRemark.ta,
+              created_at: new Date().toISOString()
+            }
+          ]);
+      }
+
+      await createNotification({
+        userId: complaint.user_id,
+        notificationKey: 'complaint_status_updated',
+        payload: {
+          complaint_title: complaint.title_en || complaint.title,
+          status: status,
+          remark: cleanRemark || ''
+        },
+        notificationType: 'Complaint',
+        relatedEntity: 'complaints',
+        relatedId: Number(id),
+        createdBy: currentUser.id
+      });
+
+      await logAudit(currentUser.id, 'COMPLAINT_STATUS_UPDATED', 'complaints', Number(id), {
+        status: complaint.status
+      }, {
+        status: status
+      });
+
+      return res.json({ success: true, data });
+    } catch (error) {
+      console.error('Update complaint error:', error);
+      return res.status(500).json({ error: error.message });
+    }
+  }
+);
+
+router.get(
+  '/replies/:complaint_id',
+  authenticate,
+  checkPrivilege('complaints_view'),
+  async (req, res) => {
+    try {
+      const { complaint_id } = req.params;
+      const { data, error } = await supabase
+        .from('complaint_replies')
+        .select(`*, users!complaint_replies_replied_by_fkey(full_name)`)
         .eq('complaint_id', complaint_id)
         .order('created_at', { ascending: true });
-    
-    if (error) {
-        return res.status(400).json({ error: error.message });
+
+      if (error) return res.status(400).json({ error: error.message });
+      return res.json(data || []);
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
     }
-    
-    res.json(data);
-});
+  }
+);
 
 module.exports = router;

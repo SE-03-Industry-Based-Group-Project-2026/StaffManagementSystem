@@ -1,658 +1,640 @@
 const express = require('express');
 const router = express.Router();
 const supabase = require('../config/supabase');
-const { authenticate, checkRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
+const { checkPrivilege } = require('../middleware/checkPrivilege');
+const { translateToAllLanguages } = require('../services/translationService');
+const { logAudit } = require('../services/auditService');
+const { createNotification } = require('../services/notificationService');
+
+const SECRETARY_ROLE_ID = 2;
+const SUBJECT_OFFICER_ROLE_ID = 4;
+const CC_OFFICER_ROLE_ID = 8;
 
 async function getCurrentUser(authId) {
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from('users')
-    .select('id, full_name, email, role_id, department_id, roles(role_name)')
+    .select(`
+      *,
+      roles(role_name),
+      departments(
+        department_name,
+        department_name_si,
+        department_name_ta
+      )
+    `)
     .eq('auth_id', authId)
     .single();
-
-  if (error || !data) return null;
   return data;
 }
 
-async function notifyUser(userId, title, message, relatedId = null) {
-  if (!userId) return;
-
-  await supabase.from('notifications').insert([{
-    user_id: userId,
-    title,
-    message,
-    is_auto_generated: true,
-    is_read: false,
-    notification_type: 'Leave',
-    related_entity: 'leave_requests',
-    related_id: relatedId,
-    created_at: new Date()
-  }]);
-}
-
-async function notifyRoles(roleNames, title, message, relatedId = null) {
-  const { data: users } = await supabase
-    .from('users')
-    .select('id, roles!inner(role_name)')
-    .in('roles.role_name', roleNames)
-    .eq('is_active', true);
-
-  for (const user of users || []) {
-    await notifyUser(user.id, title, message, relatedId);
-  }
-}
-
-async function getLeaveRequest(id) {
-  const { data, error } = await supabase
-    .from('leave_requests')
-    .select(`
-      *,
-      users!leave_requests_user_id_fkey(
-        id,
-        full_name,
-        email,
-        phone,
-        designation,
-        department_id,
-        departments(
-          department_name,
-          department_type
-        )
-      ),
-      leave_types(name_en, name_si, name_ta, max_days),
-      leave_forms(*)
-    `)
-    .eq('id', id)
-    .single();
-
-  if (error || !data) return null;
-  return data;
-}
-
-async function deductLeaveBalance(userId, leaveTypeId, days) {
-  const year = new Date().getFullYear();
-
-  const { data: balance } = await supabase
-    .from('user_leave_balances')
-    .select('id, remaining_days')
-    .eq('user_id', userId)
-    .eq('leave_type_id', leaveTypeId)
-    .eq('year', year)
-    .single();
-
-  if (!balance) return;
-
-  await supabase
-    .from('user_leave_balances')
-    .update({
-      remaining_days: Number(balance.remaining_days) - Number(days)
-    })
-    .eq('id', balance.id);
-}
-
-async function markAttendanceAsLeave(leaveRequest) {
-  let currentDate = new Date(leaveRequest.start_date);
-  const endDate = new Date(leaveRequest.end_date);
-
-  while (currentDate <= endDate) {
-    const dateStr = currentDate.toISOString().split('T')[0];
-
-    await supabase.from('attendance').upsert([{
-      user_id: leaveRequest.user_id,
-      date: dateStr,
-      status: 'On Leave',
-      is_auto_marked: true,
-      remarks: 'Auto marked after leave approval'
-    }], {
-      onConflict: 'user_id,date'
-    });
-
-    currentDate.setDate(currentDate.getDate() + 1);
-  }
-}
-
-/**
- * Staff applies leave with Government Constraints
- */
-router.post('/apply', authenticate, checkRole(['Staff']), async (req, res) => {
+async function safeTranslate(text) {
+  if (!text?.trim()) return { en: '', si: '', ta: '' };
   try {
-    const { leave_type_id, start_date, end_date, no_of_days, reason } = req.body;
-
-    const user = await getCurrentUser(req.user.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-
-    // 🏛️ 1. WEEKEND CHECK CIRCULAR
-    const startDateObj = new Date(start_date);
-    const startDay = startDateObj.getDay(); // 0 = Sunday, 6 = Saturday
-    if (startDay === 0 || startDay === 6) {
-      return res.status(400).json({ 
-        error: 'Leave requests cannot be initiated on Weekends (Saturday/Sunday) as per government regulations.' 
-      });
-    }
-
-    // 🏛️ 2. CONSECUTIVE 5-DAY LIMIT (6 days or more is blocked)
-    if (Number(no_of_days) >= 6) {
-      return res.status(400).json({
-        error: 'Maximum consecutive leave allowed is 5 days without special ministry approval.'
-      });
-    }
-
-    const year = new Date().getFullYear();
-
-    // 🏛️ 3. GOVERNMENT ANNUAL 45-DAY CAP VALIDATION
-    const { data: annualLeaves } = await supabase
-      .from('leave_requests')
-      .select('no_of_days')
-      .eq('user_id', user.id)
-      .eq('status', 'Approved')
-      .gte('start_date', `${year}-01-01`)
-      .lte('end_date', `${year}-12-31`);
-
-    const totalTaken = (annualLeaves || []).reduce((sum, item) => sum + Number(item.no_of_days), 0);
-    if (totalTaken + Number(no_of_days) > 45) {
-      return res.status(400).json({ 
-        error: `Leave restriction: This request exceeds the annual 45-day government cap. Current usage: ${totalTaken} days.` 
-      });
-    }
-
-    const { data: balance } = await supabase
-      .from('user_leave_balances')
-      .select('remaining_days')
-      .eq('user_id', user.id)
-      .eq('leave_type_id', leave_type_id)
-      .eq('year', year)
-      .single();
-
-    if (!balance || Number(balance.remaining_days) < Number(no_of_days)) {
-      return res.status(400).json({ error: 'Insufficient leave balance' });
-    }
-
-    const { data: leaveRequest, error } = await supabase
-      .from('leave_requests') 
-      .insert([{
-        user_id: user.id,
-        leave_type_id,
-        start_date,
-        end_date,
-        no_of_days,
-        reason,
-        status: 'Pending'
-      }])
-      .select()
-      .single();
-
-    if (error) return res.status(400).json({ error: error.message });
-
-    // విගණන සටහන තැබීම (Audit Trail)
-    await supabase.from('audit_logs').insert([{
-        user_id: user.id,
-        action: 'SUBMIT_LEAVE_REQUEST',
-        entity_type: 'leave_requests',
-        entity_id: leaveRequest.id
-    }]);
-
-    await notifyRoles(
-      ['Admin'],
-      'New Leave Request',
-      `${user.full_name} submitted a leave request for ${no_of_days} day(s).`,
-      leaveRequest.id
-    );
-
-    res.json({ success: true, data: leaveRequest });
+    const res = await translateToAllLanguages(text);
+    return { en: res?.en || text, si: res?.si || text, ta: res?.ta || text };
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return { en: text, si: text, ta: text };
   }
-});
+}
 
-router.get('/my-requests', authenticate, checkRole(['Staff']), async (req, res) => {
-  const user = await getCurrentUser(req.user.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
+/* 0. Submit Leave Request  */
+router.post('/apply', authenticate, checkPrivilege('leave_add'), async (req, res) => {
+  try {
+    let { leave_type_id, start_date, end_date, no_of_days, reason, coverage_officer_id } = req.body;
+    const currentUser = await getCurrentUser(req.user.id);
 
-  const { data, error } = await supabase
-    .from('leave_requests')
-   .select('*, leave_types(name_en, name_si, name_ta, max_days), leave_forms(*)')
-    .eq('user_id', user.id)
-    .order('created_at', { ascending: false });
+    if (!currentUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json(data);
-});
+    if (!leave_type_id || !start_date || !end_date) {
+      return res.status(400).json({ error: 'All required leave fields must be filled' });
+    }
 
-router.get('/my-balance', authenticate, checkRole(['Staff']), async (req, res) => {
-  const user = await getCurrentUser(req.user.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
+    const { data: leaveTypeData } = await supabase
+      .from('leave_types')
+      .select('name_en')
+      .eq('id', Number(leave_type_id))
+      .single();
 
-  const year = new Date().getFullYear();
+    const leaveTypeName = leaveTypeData?.name_en?.toLowerCase() || '';
+    const isHalfDay = leaveTypeName.includes('half');
+    const isShortLeave = leaveTypeName.includes('short');
 
-  const { data, error } = await supabase
-    .from('user_leave_balances')
-    .select('*, leave_types(name_en, name_si, name_ta, max_days)')
-    .eq('user_id', user.id)
-    .eq('year', year);
+    if (isHalfDay) {
+      no_of_days = 0.5;
+    } else if (!no_of_days) {
+      return res.status(400).json({ error: 'Number of days is required' });
+    }
 
-  if (error) return res.status(400).json({ error: error.message });
-  res.json(data);
-});
+    if (isShortLeave) {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth();
+      const firstDay = new Date(year, month, 1).toISOString().slice(0, 10);
+      const lastDay = new Date(year, month + 1, 0).toISOString().slice(0, 10);
 
-router.get('/all-requests', authenticate, async (req, res) => {
-  const currentUser = await getCurrentUser(req.user.id);
-  if (!currentUser) return res.status(404).json({ error: 'User not found' });
+      const { data: existingShortLeaves } = await supabase
+        .from('leave_requests')
+        .select('id, leave_types!inner(name_en)')
+        .eq('user_id', currentUser.id)
+        .ilike('leave_types.name_en', '%short%')
+        .neq('status', 'Rejected')
+        .gte('start_date', firstDay)
+        .lte('start_date', lastDay);
 
-  const role = currentUser.roles?.role_name;
-
-  let query = supabase
-    .from('leave_requests')
-    .select(`
-      *,
-      users!leave_requests_user_id_fkey(
-        id,
-        full_name,
-        email,
-        phone,
-        designation,
-        department_id,
-        departments(
-          department_name,
-          department_type
-        )
-      ),
-      leave_types(name_en, name_si, name_ta, max_days),
-      leave_forms(*),
-      praja_reviews(*)
-    `)
-    .order('created_at', { ascending: false });
-
-  if (role === 'Staff') {
-    query = query.eq('user_id', currentUser.id);
-  }
-  /*if (role === 'Admin') {
-    query = query.eq('status', 'Pending');
-  }*/
-  if (role === 'Praja Officer') {
-    query = query.eq('status', 'Admin Approved');
-  }
-  if (role === 'Secretary') {
-    query = query.in('status', ['Admin Approved', 'Praja Reviewed']);
-  }
-  if (role === 'Chairman') {
-    query = query.eq('status', 'Admin Approved');
-  }
-
-  const { data, error } = await query;
-  if (error) return res.status(400).json({ error: error.message });
-
-  let filteredData = data || [];
-
-  if (role === 'Praja Officer') {
-    filteredData = filteredData.filter((item) =>
-      ['Library', 'Preschool'].includes(item.users?.departments?.department_type)
-    );
-  }
-
-  if (role === 'Secretary') {
-    filteredData = filteredData.filter((item) => {
-      const deptType = item.users?.departments?.department_type;
-      const designation = item.users?.designation;
-      const isLabourer = designation === 'Labourer';
-
-      if (isLabourer) return false;
-      if (deptType === 'Library' || deptType === 'Preschool') {
-        return item.status === 'Praja Reviewed';
+      if (existingShortLeaves && existingShortLeaves.length >= 2) {
+        return res.status(400).json({ 
+          error: 'Monthly short leave limit (2) for this month has already been reached.' 
+        });
       }
-      return item.status === 'Admin Approved';
+    }
+
+    const cleanReason = String(reason || '').trim();
+
+    const { data: leaveData, error: insertError } = await supabase
+      .from('leave_requests')
+      .insert([
+        {
+          user_id: currentUser.id,
+          leave_type_id: Number(leave_type_id),
+          start_date,
+          end_date,
+          no_of_days: Number(no_of_days),
+          reason: cleanReason,
+          coverage_officer_id: coverage_officer_id ? Number(coverage_officer_id) : null,
+          status: 'Pending',
+          approval_stage: 'pending',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }
+      ])
+      .select()
+      .single();
+
+    if (insertError) {
+      return res.status(400).json({ error: insertError.message });
+    }
+
+    const { data: subjectOfficer } = await supabase
+      .from('users')
+      .select('id, full_name, email, role_id, is_active')
+      .eq('role_id', SUBJECT_OFFICER_ROLE_ID)
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
+
+    if (subjectOfficer?.id) {
+      await createNotification({
+        userId: subjectOfficer.id,
+        notificationKey: 'leave_requires_approval',
+        payload: { employee_name: currentUser.full_name || 'Employee' },
+        notificationType: 'Leave',
+        relatedEntity: 'leave_requests',
+        relatedId: leaveData.id,
+        createdBy: currentUser.id,
+        isAutoGenerated: true,
+        isForMobile: true
+      });
+    }
+
+    await logAudit(currentUser.id, 'LEAVE_APPLIED', 'leave_requests', leaveData.id);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Leave request submitted successfully',
+      data: leaveData
     });
+  } catch (error) {
+    console.error('Submit leave error:', error);
+    return res.status(500).json({ error: error.message });
   }
-
-  if (role === 'Chairman') {
-    filteredData = filteredData.filter((item) => item.users?.designation === 'Labourer');
-  }
-
-  res.json(filteredData);
 });
 
-router.put('/admin-approve/:id', authenticate, checkRole(['Admin']), async (req, res) => {
+/* 1. Subject Officer Approval Route */
+router.all('/subject-approve/:id', authenticate, checkPrivilege('leave_approve'), async (req, res) => {
   try {
-    const { id } = req.params;
-    const { remark } = req.body;
-
+    const leaveId = Number(req.params.id);
+    const cleanRemark = String(req.body.remark || '').trim();
     const currentUser = await getCurrentUser(req.user.id);
-    const leaveRequest = await getLeaveRequest(id);
 
-    if (!leaveRequest) {
-      return res.status(404).json({ error: 'Leave request not found' });
+    if (!currentUser?.signature_url) {
+      return res.status(400).json({ error: 'Please save your digital signature before approving' });
     }
-    if (leaveRequest.status !== 'Pending') {
-      return res.status(400).json({ error: 'Only pending requests can be admin approved' });
+
+    const { data: leaveRequest, error: findError } = await supabase
+      .from('leave_requests')
+      .select('*')
+      .eq('id', leaveId)
+      .single();
+
+    if (findError || !leaveRequest) return res.status(404).json({ error: 'Leave request not found' });
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select(`
+        full_name,
+        staff_category,
+        designations(
+          designation_en,
+          designation_si,
+          designation_ta
+        )
+      `)
+      .eq('id', leaveRequest.user_id)
+      .single();
+
+    const designationName = userData?.designations?.designation_en || '';
+    const isLabour = userData?.staff_category === 'Labour' || designationName.toLowerCase().includes('labour');
+
+    if (isLabour || leaveRequest.status !== 'Pending') {
+      return res.status(403).json({ error: 'Subject Officer can only approve pending non-labour leave requests' });
     }
+
+    const translatedRemark = await safeTranslate(cleanRemark);
+    const approvedAt = new Date().toISOString();
 
     const { data, error } = await supabase
       .from('leave_requests')
       .update({
-        status: 'Admin Approved',
+        status: 'Subject Approved',
         supervisor_id: currentUser.id,
-        supervisor_remark: remark || null,
-        admin_approved_at: new Date(),
+        supervisor_remark: translatedRemark.en,
+        subject_signature: currentUser.signature_url,
+        admin_approved_at: approvedAt,
         admin_approved_by: currentUser.id,
-        approval_stage: 'final_review',
-        updated_at: new Date()
+        approval_stage: 'subject_approved',
+        updated_at: approvedAt
       })
-      .eq('id', id)
+      .eq('id', leaveId)
       .select()
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
 
-    // (Audit Trail)
-    await supabase.from('audit_logs').insert([{
-        user_id: currentUser.id,
-        action: 'ADMIN_APPROVE_LEAVE',
-        entity_type: 'leave_requests',
-        entity_id: id
-    }]);
+    const { data: ccOfficer } = await supabase
+      .from('users')
+      .select('id')
+      .eq('role_id', CC_OFFICER_ROLE_ID)
+      .single();
 
-    const deptType = leaveRequest.users?.departments?.department_type;
-    const designation = leaveRequest.users?.designation;
-    const isLabourer = designation === 'Labourer';
-
-    if (isLabourer) {
-      await notifyRoles(
-        ['Chairman'],
-        'Labor Leave Needs Final Approval',
-        `${leaveRequest.users?.full_name}'s 'Labourer Leave Needs Chairman Approval'.`,
-        Number(id)
-      );
-    } else if (deptType === 'Library' || deptType === 'Preschool') {
-      await notifyRoles(
-        ['Praja Officer'],
-        'Leave Request Needs Praja Review',
-        `${leaveRequest.users?.full_name}'s leave request needs your review.`,
-        Number(id)
-      );
-    } else {
-      await notifyRoles(
-        ['Secretary'],
-        'Leave Request Needs Final Approval',
-        `${leaveRequest.users?.full_name}'s leave request was approved by Admin.`,
-        Number(id)
-      );
+    if (ccOfficer) {
+      await createNotification({
+        userId: ccOfficer.id,
+        notificationKey: 'leave_requires_approval',
+        payload: { employee_name: userData?.full_name || 'Employee' },
+        notificationType: 'Leave',
+        relatedEntity: 'leave_requests',
+        relatedId: leaveId,
+        createdBy: currentUser.id
+      });
     }
 
-    res.json({ success: true, data });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    await logAudit(currentUser.id, 'SUBJECT_APPROVED', 'leave_requests', leaveId);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
-router.put('/praja-review/:id', authenticate, checkRole(['Praja Officer']), async (req, res) => {
+/* 2. CC Officer Approval Route */
+router.all('/cc-approve/:id', authenticate, checkPrivilege('leave_approve'), async (req, res) => {
   try {
-    const { id } = req.params;
-    const { note } = req.body;
-
+    const leaveId = Number(req.params.id);
+    const cleanRemark = String(req.body.remark || '').trim();
     const currentUser = await getCurrentUser(req.user.id);
-    const leaveRequest = await getLeaveRequest(id);
 
-    if (!leaveRequest) {
-      return res.status(404).json({ error: 'Leave request not found' });
-    }
-
-    const deptType = leaveRequest.users?.departments?.department_type;
-    if (!(deptType === 'Library' || deptType === 'Preschool')) {
-      return res.status(403).json({ error: 'Praja Officer can review only Library or Preschool leaves' });
-    }
-    if (leaveRequest.status !== 'Admin Approved') {
-      return res.status(400).json({ error: 'Only admin approved requests can be reviewed' });
-    }
-    if (!note || !note.trim()) {
-      return res.status(400).json({ error: 'Review note is required' });
+    if (!currentUser?.signature_url) {
+      return res.status(400).json({ error: 'Please save your digital signature before approving' });
     }
 
-    await supabase.from('praja_reviews').insert([{
-      leave_request_id: Number(id),
-      reviewed_by: currentUser.id,
-      note
-    }]);
+    const { data: leaveRequest, error: findError } = await supabase
+      .from('leave_requests')
+      .select('*')
+      .eq('id', leaveId)
+      .single();
+
+    if (findError || !leaveRequest) return res.status(404).json({ error: 'Leave request not found' });
+
+    if (leaveRequest.status !== 'Subject Approved') {
+      return res.status(403).json({ error: 'Leave request must be approved by Subject Officer first' });
+    }
+
+    const { data: userData } = await supabase
+      .from('users')
+      .select('full_name')
+      .eq('id', leaveRequest.user_id)
+      .single();
+
+    const translatedRemark = await safeTranslate(cleanRemark);
+    const approvedAt = new Date().toISOString();
 
     const { data, error } = await supabase
       .from('leave_requests')
       .update({
-      status: 'Praja Reviewed',
-      supervisor_id: currentUser.id,
-      supervisor_remark: note,
-      approval_stage: 'praja_reviewed',
-      updated_at: new Date()
+        status: 'CC Approved',
+        supervisor_id: currentUser.id,
+        supervisor_remark: translatedRemark.en,
+        cc_signature: currentUser.signature_url,
+        cc_approved_at: approvedAt,
+        cc_approved_by: currentUser.id,
+        approval_stage: 'cc_approved',
+        updated_at: approvedAt
       })
-      .eq('id', id)
+      .eq('id', leaveId)
       .select()
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
 
-    //  (Audit Trail)
-    await supabase.from('audit_logs').insert([{
-        user_id: currentUser.id,
-        action: 'PRAJA_REVIEW_LEAVE',
-        entity_type: 'leave_requests',
-        entity_id: id
-    }]);
+    const { data: secretary } = await supabase
+      .from('users')
+      .select('id')
+      .eq('role_id', SECRETARY_ROLE_ID)
+      .single();
 
-    await notifyRoles(
-      ['Secretary'],
-      'Leave Request Reviewed by Praja Officer',
-      `${leaveRequest.users?.full_name}'s Library/Preschool leave request is ready for final approval.`,
-      Number(id)
-    );
+    if (secretary) {
+      await createNotification({
+        userId: secretary.id,
+        notificationKey: 'leave_requires_final_approval',
+        payload: { employee_name: userData?.full_name || 'Employee' },
+        notificationType: 'Leave',
+        relatedEntity: 'leave_requests',
+        relatedId: leaveId,
+        createdBy: currentUser.id
+      });
+    }
 
-    res.json({ success: true, data });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    await logAudit(currentUser.id, 'CC_APPROVED', 'leave_requests', leaveId);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
-router.put('/final-approve/:id', authenticate, async (req, res) => {
+/* 3. Final Approve Route (Secretary & Chairman) */
+router.all('/final-approve/:id', authenticate, checkPrivilege('leave_approve'), async (req, res) => {
   try {
-    const { id } = req.params;
-    const { remark } = req.body;
-
+    const leaveId = Number(req.params.id);
+    const cleanRemark = String(req.body.remark || '').trim();
     const currentUser = await getCurrentUser(req.user.id);
-    if (!currentUser) return res.status(404).json({ error: 'User not found' });
+
+    if (!currentUser?.signature_url) {
+      return res.status(400).json({ error: 'Please save your digital signature before approving' });
+    }
+
+    const { data: leaveRequest, error: findError } = await supabase
+      .from('leave_requests')
+      .select('*, leave_types(name_en)')
+      .eq('id', leaveId)
+      .single();
+
+    if (findError || !leaveRequest) {
+      return res.status(404).json({ error: 'Leave request not found' });
+    }
 
     const role = currentUser.roles?.role_name;
-    const leaveRequest = await getLeaveRequest(id);
 
-    if (!leaveRequest) {
-      return res.status(404).json({ error: 'Leave request not found' });
+    const { data: userData } = await supabase
+      .from('users')
+      .select(`
+        full_name,
+        staff_category,
+        designations(designation_en)
+      `)
+      .eq('id', leaveRequest.user_id)
+      .single();
+
+    const designationName = userData?.designations?.designation_en || '';
+    const isLabour = userData?.staff_category === 'Labour' || designationName.toLowerCase().includes('labour');
+
+    if (role === 'Chairman' && !isLabour) {
+      return res.status(403).json({ error: 'Chairman can approve only Labour leave requests' });
+    }
+    if (role === 'Secretary' && isLabour) {
+      return res.status(403).json({ error: 'Secretary cannot approve Labour leave requests' });
     }
 
-    const deptType = leaveRequest.users?.departments?.department_type;
-    const designation = leaveRequest.users?.designation;
-    const isLabourer = designation === 'Labourer';
-
-    if (role === 'Chairman') {
-      if (!isLabourer || leaveRequest.status !== 'Admin Approved') {
-        return res.status(403).json({ error: 'Chairman can approve only admin-approved Labourer leave' });
-      }
-    } else if (role === 'Secretary') {
-      if (isLabourer) {
-        return res.status(403).json({ error: 'Secretary cannot approve Labourer leave' });
-      }
-      if ((deptType === 'Library' || deptType === 'Preschool') && leaveRequest.status !== 'Praja Reviewed') {
-        return res.status(403).json({ error: 'Library/Preschool leave must be reviewed by Praja Officer first' });
-      }
-      if (!(deptType === 'Library' || deptType === 'Preschool') && leaveRequest.status !== 'Admin Approved') {
-        return res.status(403).json({ error: 'Regular leave must be admin approved first' });
-      }
-    } else {
-      return res.status(403).json({ error: 'Only Secretary or Chairman can final approve' });
-    }
+    const translatedRemark = await safeTranslate(cleanRemark);
+    const approvedAt = new Date().toISOString();
 
     const { data, error } = await supabase
       .from('leave_requests')
       .update({
         status: 'Approved',
         supervisor_id: currentUser.id,
-        supervisor_remark: remark || null,
-        final_approved_at: new Date(),
+        supervisor_remark: translatedRemark.en,
+        final_approved_at: approvedAt,
         final_approved_by: currentUser.id,
+        secretary_signature: role === 'Secretary' ? currentUser.signature_url : null,
+        chairman_signature: role === 'Chairman' ? currentUser.signature_url : null,
         approval_stage: 'completed',
-        updated_at: new Date()
+        updated_at: approvedAt
       })
-      .eq('id', id)
+      .eq('id', leaveId)
       .select()
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
 
-    await deductLeaveBalance(leaveRequest.user_id, leaveRequest.leave_type_id, leaveRequest.no_of_days);
-    await markAttendanceAsLeave(leaveRequest);
+    const year = Number(leaveRequest.start_date.substring(0, 4));
+    const leaveTypeName = leaveRequest.leave_types?.name_en?.toLowerCase() || '';
+    
+    let targetLeaveTypeId = leaveRequest.leave_type_id;
+    let deductDays = Number(leaveRequest.no_of_days);
 
-    // (Audit Trail)
-    await supabase.from('audit_logs').insert([{
-        user_id: currentUser.id,
-        action: 'FINAL_APPROVE_LEAVE',
-        entity_type: 'leave_requests',
-        entity_id: id
-    }]);
+    if (leaveTypeName.includes('short')) {
+      const { data: casualType } = await supabase
+        .from('leave_types')
+        .select('id')
+        .ilike('name_en', '%casual%')
+        .single();
 
-    await notifyUser(
-      leaveRequest.user_id,
-      'Leave Approved',
-      `Your leave request from ${leaveRequest.start_date} to ${leaveRequest.end_date} has been approved.`,
-      Number(id)
+      if (casualType) {
+        targetLeaveTypeId = casualType.id;
+        deductDays = 0.5; 
+      }
+    }
+
+    const { data: balance } = await supabase
+      .from('user_leave_balances')
+      .select('id, used_days, remaining_days')
+      .eq('user_id', leaveRequest.user_id)
+      .eq('leave_type_id', targetLeaveTypeId)
+      .eq('year', year)
+      .single();
+
+    if (balance) {
+      const newUsedDays = Number(balance.used_days) + deductDays;
+      const newRemainingDays = Math.max(Number(balance.remaining_days) - deductDays, 0);
+
+      await supabase
+        .from('user_leave_balances')
+        .update({
+          used_days: newUsedDays,
+          remaining_days: newRemainingDays
+        })
+        .eq('id', balance.id);
+    }
+
+    await createNotification({
+      userId: leaveRequest.user_id,
+      notificationKey: 'leave_final_approved',
+      payload: {
+        start_date: leaveRequest.start_date,
+        end_date: leaveRequest.end_date,
+        approved_by: currentUser.full_name
+      },
+      notificationType: 'Leave',
+      relatedEntity: 'leave_requests',
+      relatedId: leaveId,
+      createdBy: currentUser.id
+    });
+
+    if (leaveRequest.coverage_officer_id) {
+      await createNotification({
+        userId: leaveRequest.coverage_officer_id,
+        notificationKey: 'acting_officer_assigned',
+        payload: {
+          employee_name: userData?.full_name || 'Employee',
+          start_date: leaveRequest.start_date
+        },
+        notificationType: 'Leave',
+        relatedEntity: 'leave_requests',
+        relatedId: leaveId,
+        createdBy: currentUser.id
+      });
+    }
+
+    await logAudit(
+      currentUser.id,
+      role === 'Secretary' ? 'SECRETARY_APPROVED' : 'CHAIRMAN_APPROVED',
+      'leave_requests',
+      leaveId
     );
 
-    res.json({ success: true, data });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
-router.put('/reject/:id', authenticate, async (req, res) => {
+/* 4. Reject Leave Request Route */
+router.all('/reject/:id', authenticate, checkPrivilege('leave_reject'), async (req, res) => {
   try {
-    const { id } = req.params;
-    const { remark } = req.body;
-    if (!remark || !remark.trim()) {
-  return res.status(400).json({ error: 'Reject reason is required' });
-}
-
+    const leaveId = Number(req.params.id);
+    const cleanRemark = String(req.body.remark || '').trim();
+    const signature = req.body.signature || null;
     const currentUser = await getCurrentUser(req.user.id);
-    if (!currentUser) return res.status(404).json({ error: 'User not found' });
 
-    const role = currentUser.roles?.role_name;
-    const leaveRequest = await getLeaveRequest(id);
+    const { data: leaveRequest, error: findError } = await supabase
+      .from('leave_requests')
+      .select('*')
+      .eq('id', leaveId)
+      .single();
 
-    if (!leaveRequest) {
-      return res.status(404).json({ error: 'Leave request not found' });
-    }
+    if (findError || !leaveRequest) return res.status(404).json({ error: 'Leave request not found' });
 
-    const deptType = leaveRequest.users?.departments?.department_type;
-    const designation = leaveRequest.users?.designation;
-    const isLabourer = designation === 'Labourer';
+    const translatedRemark = await safeTranslate(cleanRemark);
+    const updatedAt = new Date().toISOString();
 
-    let allowed = false;
+    const roleName = currentUser.roles?.role_name;
+    let signatureColumn = {};
 
-    if (role === 'Admin' && leaveRequest.status === 'Pending') allowed = true;
-    if (role === 'Praja Officer' && leaveRequest.status === 'Admin Approved' && (deptType === 'Library' || deptType === 'Preschool')) allowed = true;
-    if (role === 'Secretary' && !isLabourer && ['Admin Approved', 'Praja Reviewed'].includes(leaveRequest.status)) allowed = true;
-    if (role === 'Chairman' && isLabourer && leaveRequest.status === 'Admin Approved') allowed = true;
-
-    if (!allowed) {
-      return res.status(403).json({ error: 'You are not allowed to reject this leave request' });
+    if (signature) {
+      if (roleName === 'Subject Officer') {
+        signatureColumn = { subject_signature: signature };
+      } else if (roleName === 'CC Officer') {
+        signatureColumn = { cc_signature: signature };
+      } else if (roleName === 'Secretary') {
+        signatureColumn = { secretary_signature: signature };
+      } else if (roleName === 'Chairman') {
+        signatureColumn = { chairman_signature: signature };
+      }
     }
 
     const { data, error } = await supabase
-  .from('leave_requests')
-  .update({
-    status: 'Rejected',
-    supervisor_id: currentUser.id,
-    supervisor_remark: remark || null,
-    approval_stage: 'rejected',
-    updated_at: new Date()
-  })
-  .eq('id', id)
-  .select()
-  .single();
+      .from('leave_requests')
+      .update({
+        status: 'Rejected',
+        supervisor_id: currentUser.id,
+        supervisor_remark: translatedRemark.en,
+        updated_at: updatedAt,
+        ...signatureColumn
+      })
+      .eq('id', leaveId)
+      .select()
+      .single();
 
     if (error) return res.status(400).json({ error: error.message });
 
-    // විගණන සටහන තැබීම (Audit Trail)
-    await supabase.from('audit_logs').insert([{
-        user_id: currentUser.id,
-        action: 'REJECT_LEAVE_REQUEST',
-        entity_type: 'leave_requests',
-        entity_id: id
-    }]);
+    await createNotification({
+      userId: leaveRequest.user_id,
+      notificationKey: 'leave_request_rejected',
+      payload: {
+        start_date: leaveRequest.start_date,
+        end_date: leaveRequest.end_date,
+        rejected_by: currentUser.full_name
+      },
+      notificationType: 'Leave',
+      relatedEntity: 'leave_requests',
+      relatedId: leaveId,
+      createdBy: currentUser.id
+    });
 
-    await notifyUser(
-      leaveRequest.user_id,
-      'Leave Rejected',
-      `Your leave request from ${leaveRequest.start_date} to ${leaveRequest.end_date} has been rejected. Reason: ${remark || 'Not specified'}`,
-      Number(id)
-    );
-
-    res.json({ success: true, data });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    await logAudit(currentUser.id, 'LEAVE_REJECTED', 'leave_requests', leaveId);
+    return res.json({ success: true, data });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 });
 
-router.post('/digital-form/:leave_request_id', authenticate, checkRole(['Staff']), async (req, res) => {
-  const { leave_request_id } = req.params;
-  const { form_details, digital_signature } = req.body;
+/* 5. Get All Leave Requests based on Role */
+router.get('/all-requests', authenticate, checkPrivilege('leave_view'), async (req, res) => {
+  try {
+    const currentUser = await getCurrentUser(req.user.id);
+    const role = currentUser?.roles?.role_name;
 
-  const user = await getCurrentUser(req.user.id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
+    const { data: rawRequests, error: leaveError } = await supabase
+      .from('leave_requests')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-  const { data: leaveRequest } = await supabase
-    .from('leave_requests')
-    .select('id, user_id')
-    .eq('id', leave_request_id)
-    .single();
+    if (leaveError) return res.status(400).json({ error: leaveError.message });
+    if (!rawRequests || rawRequests.length === 0) return res.json([]);
 
-  if (!leaveRequest || leaveRequest.user_id !== user.id) {
-    return res.status(404).json({ error: 'Leave request not found' });
+    const { data: usersData } = await supabase
+      .from('users')
+      .select(`
+        id,
+        title,
+        full_name,
+        email,
+        phone,
+        staff_category,
+        department_id,
+        designations(
+          designation_en,
+          designation_si,
+          designation_ta
+        ),
+        departments(
+          department_name,
+          department_name_si,
+          department_name_ta,
+          department_type
+        )
+      `);
+
+    const { data: leaveTypesData } = await supabase
+      .from('leave_types')
+      .select('name_en, name_si, name_ta, max_days, id');
+
+    const usersMap = new Map((usersData || []).map(u => [u.id, u]));
+    const leaveTypesMap = new Map((leaveTypesData || []).map(lt => [lt.id, lt]));
+
+    let enrichedRequests = rawRequests.map(req => {
+      const user = usersMap.get(req.user_id) || null;
+      const actingUser = req.coverage_officer_id ? usersMap.get(req.coverage_officer_id) : null;
+      const leaveType = leaveTypesMap.get(req.leave_type_id) || null;
+
+      return {
+        ...req,
+        users: user,
+        acting_user: actingUser,
+        leave_types: leaveType
+      };
+    });
+
+    let filtered = enrichedRequests;
+    if (role === 'Subject Officer') {
+      filtered = enrichedRequests.filter(i => ['Pending', 'Subject Approved', 'CC Approved', 'Approved', 'Rejected'].includes(i.status));
+    } else if (role === 'CC Officer') {
+      filtered = enrichedRequests.filter(i => ['Subject Approved', 'CC Approved', 'Approved', 'Rejected'].includes(i.status));
+    } else if (role === 'Secretary') {
+      filtered = enrichedRequests.filter(i => (i.users?.staff_category !== 'Labour') && ['Subject Approved', 'CC Approved', 'Approved', 'Rejected'].includes(i.status));
+    } else if (role === 'Chairman') {
+      filtered = enrichedRequests.filter(i => (i.users?.staff_category === 'Labour') && ['Pending', 'Approved', 'Rejected'].includes(i.status));
+    }
+
+    return res.json(filtered);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
-
-  const { data, error } = await supabase
-    .from('leave_forms')
-    .upsert([{
-      leave_request_id,
-      form_details,
-      digital_signature,
-      submitted_at: new Date()
-    }], {
-      onConflict: 'leave_request_id'
-    })
-    .select()
-    .single();
-
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ success: true, data });
 });
 
-router.get('/stats', authenticate, async (req, res) => {
-  const today = new Date().toISOString().split('T')[0];
+/* Get Current User Leave Balances */
+router.get('/my-leave-balances', authenticate, checkPrivilege('leave_view'), async (req, res) => {
+  try {
+    const currentUser = await getCurrentUser(req.user.id);
+    const year = Number(req.query.year) || new Date().getFullYear();
 
-  const { count: staffCount } = await supabase
-    .from('users')
-    .select('*', { count: 'exact', head: true })
-    .eq('is_active', true);
+    const { data: balances, error } = await supabase
+      .from('user_leave_balances')
+      .select(`
+        id,
+        year,
+        allocated_days,
+        used_days,
+        remaining_days,
+        leave_types (
+          id,
+          name_en,
+          name_si,
+          name_ta,
+          max_days
+        )
+      `)
+      .eq('user_id', currentUser.id)
+      .eq('year', year);
 
-  const { count: pendingLeaves } = await supabase
-    .from('leave_requests')
-    .select('*', { count: 'exact', head: true })
-    .in('status', ['Pending', 'Admin Approved', 'Praja Reviewed']);
+    if (error) return res.status(400).json({ error: error.message });
 
-  const { count: presentToday } = await supabase
-    .from('attendance')
-    .select('*', { count: 'exact', head: true })
-    .eq('date', today)
-    .eq('status', 'Present');
-
-  res.json({
-    totalStaff: staffCount || 0,
-    pendingLeaves: pendingLeaves || 0,
-    presentToday: presentToday || 0
-  });
+    return res.json({ success: true, data: balances || [] });
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
+  }
 });
 
 module.exports = router;

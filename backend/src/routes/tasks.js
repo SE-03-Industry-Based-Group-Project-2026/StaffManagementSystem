@@ -1,7 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const supabase = require('../config/supabase');
-const { authenticate, checkRole } = require('../middleware/auth');
+const { authenticate } = require('../middleware/auth');
+const { checkPrivilege } = require('../middleware/checkPrivilege');
+const { logAudit } = require('../services/auditService');
+const { createNotification } = require('../services/notificationService');
+const { translateToAllLanguages } = require('../services/translationService');
+
+const ALLOWED_STATUSES = ['Pending', 'In Progress', 'Done'];
+
+const normalizeText = (value = '') => String(value).trim().toLowerCase();
 
 async function getCurrentUser(authId) {
   const { data, error } = await supabase
@@ -11,9 +19,9 @@ async function getCurrentUser(authId) {
       full_name,
       email,
       department_id,
-      designation,
+      designations(designation_en, designation_si, designation_ta),
       roles(role_name),
-      departments(department_name, department_type)
+      departments(department_name, department_name_si, department_name_ta, department_type)
     `)
     .eq('auth_id', authId)
     .single();
@@ -30,9 +38,10 @@ async function getUserById(id) {
       full_name,
       email,
       department_id,
-      designation,
+      designations(designation_en, designation_si, designation_ta),
+      is_active,
       roles(role_name),
-      departments(department_name, department_type)
+      departments(department_name, department_name_si, department_name_ta, department_type)
     `)
     .eq('id', id)
     .single();
@@ -41,237 +50,301 @@ async function getUserById(id) {
   return data;
 }
 
-function canAssignTask(assigner, assignee, departmentId) {
-  const role = assigner.roles?.role_name;
-  const assigneeDeptName = assignee.departments?.department_name;
-  const assigneeDeptType = assignee.departments?.department_type;
+async function getDepartmentById(id) {
+  const { data, error } = await supabase
+    .from('departments')
+    .select('id, department_name, department_name_si, department_name_ta, department_type')
+    .eq('id', id)
+    .single();
 
-  if (role === 'Chairman') return true;
+  if (error || !data) return null;
+  return data;
+}
 
-  if (role === 'Secretary') return true;
+function isDepartmentAllowedForRole(assigner, department) {
+  const role = normalizeText(assigner.roles?.role_name);
 
-  if (role === 'Praja Officer') {
-    return ['Library', 'Preschool'].includes(assigneeDeptType);
+  if (
+    role === 'chairman' ||
+    role === 'secretary' ||
+    role === 'cc officer' ||
+    role === 'subject officer'
+  ) {
+    return true;
   }
 
-  if (role === 'Admin') {
-    return ['Engineering', 'Development & Planning'].includes(assigneeDeptName);
-  }
-
-  if (role === 'Department Head') {
-    return Number(departmentId) === Number(assigner.department_id);
+  const departmentType = normalizeText(department?.department_type);
+  if (role === 'praja officer') {
+    return ['library', 'preschool'].includes(departmentType);
   }
 
   return false;
 }
 
-async function notifyUser(userId, title, message, relatedId) {
-  await supabase.from('notifications').insert([{
-    user_id: userId,
-    title,
-    message,
-    is_read: false,
-    is_auto_generated: true,
-    notification_type: 'Task',
-    related_entity: 'tasks',
-    related_id: relatedId || null,
-    created_at: new Date()
-  }]);
+function canAssignTask(assigner, assignee, department) {
+  if (!assigner || !assignee || !department) return false;
+
+  if (Number(assignee.department_id) !== Number(department.id)) return false;
+  if (assignee.is_active === false) return false;
+
+  return isDepartmentAllowedForRole(assigner, department);
 }
 
-// Assign task from web admin
-router.post('/assign', authenticate, checkRole(['Admin', 'Praja Officer', 'Secretary', 'Chairman', 'Department Head']), async (req, res) => {
-  try {
-    const { title, description, assigned_to, department_id, frequency, due_date } = req.body;
+router.post(
+  '/assign',
+  authenticate,
+  checkPrivilege('task_assign'),
+  async (req, res) => {
+    try {
+      const { title, description, assigned_to, department_id, due_date } = req.body;
+      const cleanTitle = String(title || '').trim();
+      const cleanDescription = String(description || '').trim();
 
-    if (!title || !assigned_to || !department_id || !frequency || !due_date) {
-      return res.status(400).json({ error: 'Title, assigned staff, department, frequency and due date are required' });
+      if (!cleanTitle || !assigned_to || !department_id || !due_date) {
+        return res.status(400).json({
+          error: 'Title, assigned staff, department and due date are required'
+        });
+      }
+
+      const selectedDueDate = new Date(`${due_date}T00:00:00`);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (Number.isNaN(selectedDueDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid due date' });
+      }
+
+      if (selectedDueDate < today) {
+        return res.status(400).json({ error: 'Due date cannot be in the past' });
+      }
+
+      const [assigner, assignee, department] = await Promise.all([
+        getCurrentUser(req.user.id),
+        getUserById(assigned_to),
+        getDepartmentById(department_id)
+      ]);
+
+      if (!assigner) return res.status(404).json({ error: 'Assigner not found' });
+      if (!assignee) return res.status(404).json({ error: 'Assigned staff not found' });
+      if (!department) return res.status(404).json({ error: 'Department not found' });
+
+      if (!canAssignTask(assigner, assignee, department)) {
+        return res.status(403).json({
+          error: 'You are not allowed to assign a task to this staff member or department'
+        });
+      }
+
+      const translatedTitle = await translateToAllLanguages(cleanTitle);
+      const translatedDescription = cleanDescription
+        ? await translateToAllLanguages(cleanDescription)
+        : { en: '', si: '', ta: '' };
+
+      const { data, error } = await supabase
+        .from('tasks')
+        .insert([{
+          title: translatedTitle.en,
+          description: translatedDescription.en,
+          title_en: translatedTitle.en,
+          title_si: translatedTitle.si,
+          title_ta: translatedTitle.ta,
+          description_en: translatedDescription.en,
+          description_si: translatedDescription.si,
+          description_ta: translatedDescription.ta,
+          assigned_to: assignee.id,
+          department_id: department.id,
+          due_date,
+          assigned_by: assigner.id,
+          status: 'Pending',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }])
+        .select(`
+          *,
+          assigned_to_user:users!tasks_assigned_to_fkey(full_name, email),
+          assigned_by_user:users!tasks_assigned_by_fkey(full_name, email),
+          departments(department_name, department_name_si, department_name_ta, department_type)
+        `)
+        .single();
+
+      if (error) return res.status(400).json({ error: error.message });
+
+      await Promise.all([
+        createNotification({
+          userId: assignee.id,
+          notificationKey: 'task_assigned',
+          payload: {
+            assigned_by: assigner.full_name,
+            task_title: cleanTitle
+          },
+          notificationType: 'Task',
+          relatedEntity: 'tasks',
+          relatedId: data.id,
+          createdBy: assigner.id
+        }),
+        logAudit(
+          assigner.id,
+          'ASSIGN_TASK',
+          'tasks',
+          data.id,
+          null, 
+          {
+            title: cleanTitle,
+            assigned_to: assignee.full_name,
+            due_date: due_date
+          }
+        )
+      ]);
+
+      return res.json({ success: true, message: 'Task assigned successfully', data });
+    } catch (err) {
+      console.error('Assign task error:', err);
+      return res.status(500).json({ error: err.message || 'Internal server error' });
     }
-
-    const allowedFrequency = ['Daily', 'Weekly', 'Monthly', 'Yearly'];
-    if (!allowedFrequency.includes(frequency)) {
-      return res.status(400).json({ error: 'Invalid task frequency' });
-    }
-
-    const assigner = await getCurrentUser(req.user.id);
-    const assignee = await getUserById(assigned_to);
-
-    if (!assigner) return res.status(404).json({ error: 'Assigner not found' });
-    if (!assignee) return res.status(404).json({ error: 'Assigned staff not found' });
-
-    if (!canAssignTask(assigner, assignee, department_id)) {
-      return res.status(403).json({ error: 'You are not allowed to assign this task to this staff member' });
-    }
-
-    const { data, error } = await supabase
-      .from('tasks')
-      .insert([{
-        title,
-        description,
-        assigned_to,
-        department_id,
-        frequency,
-        due_date,
-        assigned_by: assigner.id,
-        status: 'Pending',
-        created_at: new Date()
-      }])
-      .select(`
-        *,
-        assigned_to_user:users!tasks_assigned_to_fkey(full_name, email),
-        assigned_by_user:users!tasks_assigned_by_fkey(full_name, email),
-        departments(department_name)
-      `)
-      .single();
-
-    if (error) return res.status(400).json({ error: error.message });
-
-    await notifyUser(
-      assigned_to,
-      'New Task Assigned',
-      `${assigner.full_name} assigned you a ${frequency} task: ${title}`,
-      data.id
-    );
-
-    await supabase.from('audit_logs').insert([{
-      user_id: assigner.id,
-      action: 'ASSIGN_TASK',
-      entity_type: 'tasks',
-      entity_id: data.id,
-      new_value: title
-    }]);
-
-    res.json({ success: true, message: 'Task assigned successfully', data });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
-});
+);
 
-// Web admin task list
-router.get('/all', authenticate, checkRole(['Admin', 'Praja Officer', 'Secretary', 'Chairman']), async (req, res) => {
-  try {
-    const currentUser = await getCurrentUser(req.user.id);
-    if (!currentUser) return res.status(404).json({ error: 'User not found' });
+router.get(
+  '/all',
+  authenticate,
+  checkPrivilege('task_view'),
+  async (req, res) => {
+    try {
+      const currentUser = await getCurrentUser(req.user.id);
+      if (!currentUser) return res.status(404).json({ error: 'User not found' });
 
-    const role = currentUser.roles?.role_name;
+      const { data, error } = await supabase
+        .from('tasks')
+        .select(`
+          *,
+          assigned_to_user:users!tasks_assigned_to_fkey(
+            id,
+            full_name,
+            email,
+            department_id,
+            roles(role_name),
+            designations(designation_en, designation_si, designation_ta),
+            departments(department_name, department_name_si, department_name_ta, department_type)
+          ),
+          assigned_by_user:users!tasks_assigned_by_fkey(full_name, email),
+          departments(department_name, department_name_si, department_name_ta, department_type)
+        `)
+        .order('created_at', { ascending: false });
 
-    let query = supabase
-      .from('tasks')
-      .select(`
-        *,
-        assigned_to_user:users!tasks_assigned_to_fkey(full_name, email, department_id, roles(role_name), departments(department_name, department_type)),
-        assigned_by_user:users!tasks_assigned_by_fkey(full_name, email),
-        departments(department_name, department_type)
-      `)
-      .order('created_at', { ascending: false });
+      if (error) return res.status(400).json({ error: error.message });
 
-    const { data, error } = await query;
-    if (error) return res.status(400).json({ error: error.message });
-
-    let rows = data || [];
-
-    if (role === 'Admin') {
-  rows = rows.filter(t =>
-    ['Engineering', 'Development & Planning'].includes(t.departments?.department_name)
-  );
-}
-
-    if (role === 'Praja Officer') {
-      rows = rows.filter(t =>
-        ['Library', 'Preschool'].includes(t.departments?.department_type)
-      );
+      return res.json(data || []);
+    } catch (err) {
+      console.error('Load all tasks error:', err);
+      return res.status(500).json({ error: err.message || 'Internal server error' });
     }
-
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
-});
+);
 
-// Mobile app: staff sees own tasks
-router.get('/my-tasks', authenticate, checkRole(['Staff', 'Department Head', 'Secretary', 'Praja Officer']), async (req, res) => {
-  try {
-    const user = await getCurrentUser(req.user.id);
-    if (!user) return res.status(404).json({ error: 'User not found' });
+router.get(
+  '/my-tasks',
+  authenticate,
+  checkPrivilege('task_view'),
+  async (req, res) => {
+    try {
+      const user = await getCurrentUser(req.user.id);
+      if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const { data, error } = await supabase
-      .from('tasks')
-      .select(`
-        *,
-        assigned_by_user:users!tasks_assigned_by_fkey(full_name, email),
-        departments(department_name, department_type)
-      `)
-      .eq('assigned_to', user.id)
-      .order('due_date', { ascending: true });
+      const { data, error } = await supabase
+        .from('tasks')
+        .select(`
+          *,
+          assigned_by_user:users!tasks_assigned_by_fkey(full_name, email),
+          departments(department_name, department_name_si, department_name_ta, department_type)
+        `)
+        .eq('assigned_to', user.id)
+        .order('due_date', { ascending: true });
 
-    if (error) return res.status(400).json({ error: error.message });
-
-    res.json(data || []);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+      if (error) return res.status(400).json({ error: error.message });
+      return res.json(data || []);
+    } catch (err) {
+      console.error('Load my tasks error:', err);
+      return res.status(500).json({ error: err.message || 'Internal server error' });
+    }
   }
-});
+);
 
-// Mobile app: update task status
 router.put('/status/:id', authenticate, async (req, res) => {
   try {
-    const { id } = req.params;
+    const taskId = Number(req.params.id);
     const { status, progress_note } = req.body;
 
-    const allowedStatuses = ['Pending', 'In Progress', 'Done'];
-    if (!allowedStatuses.includes(status)) {
+    if (!Number.isInteger(taskId) || taskId <= 0) {
+      return res.status(400).json({ error: 'Invalid task ID' });
+    }
+
+    if (!ALLOWED_STATUSES.includes(status)) {
       return res.status(400).json({ error: 'Invalid task status' });
     }
 
     const user = await getCurrentUser(req.user.id);
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    const { data: task } = await supabase
+    const { data: task, error: taskError } = await supabase
       .from('tasks')
       .select(`
         *,
         assigned_to_user:users!tasks_assigned_to_fkey(full_name),
         assigned_by_user:users!tasks_assigned_by_fkey(full_name, email)
       `)
-      .eq('id', id)
+      .eq('id', taskId)
       .single();
 
-    if (!task) return res.status(404).json({ error: 'Task not found' });
+    if (taskError || !task) return res.status(404).json({ error: 'Task not found' });
 
-    if (task.assigned_to !== user.id) {
+    if (Number(task.assigned_to) !== Number(user.id)) {
       return res.status(403).json({ error: 'You can update only your assigned tasks' });
     }
 
     const { data, error } = await supabase
       .from('tasks')
-      .update({
-        status,
-        updated_at: new Date()
-      })
-      .eq('id', id)
-      .select()
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', taskId)
+      .select(`*, departments(department_name, department_name_si, department_name_ta, department_type)`)
       .single();
 
     if (error) return res.status(400).json({ error: error.message });
 
-    await notifyUser(
-      task.assigned_by,
-      'Task Status Updated',
-      `${user.full_name} updated "${task.title}" to ${status}.${progress_note ? ` Note: ${progress_note}` : ''}`,
-      Number(id)
-    );
+    const cleanProgressNote = String(progress_note || '').trim();
 
-    await supabase.from('audit_logs').insert([{
-      user_id: user.id,
-      action: `UPDATE_TASK_STATUS_${status.toUpperCase().replace(/\s+/g, '_')}`,
-      entity_type: 'tasks',
-      entity_id: Number(id),
-      new_value: status
-    }]);
+    await Promise.all([
+      createNotification({
+        userId: task.assigned_by,
+        notificationKey: 'task_status_updated',
+        payload: {
+          updated_by: user.full_name,
+          task_title: task.title,
+          status,
+          note: cleanProgressNote || ''
+        },
+        notificationType: 'Task',
+        relatedEntity: 'tasks',
+        relatedId: taskId,
+        createdBy: user.id
+      }),
+      logAudit(
+        user.id,
+        'TASK_STATUS_UPDATED',
+        'tasks',
+        taskId,
+        {
+          status: task.status
+        },
+        {
+          status,
+          progress_note: cleanProgressNote
+        }
+      )
+    ]);
 
-    res.json({ success: true, message: 'Task status updated successfully', data });
+    return res.json({ success: true, message: 'Task status updated successfully', data });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error('Update task status error:', err);
+    return res.status(500).json({ error: err.message || 'Internal server error' });
   }
 });
 
