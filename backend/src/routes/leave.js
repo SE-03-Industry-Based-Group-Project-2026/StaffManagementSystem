@@ -64,12 +64,15 @@ router.post('/apply', authenticate, checkPrivilege('leave_add'), async (req, res
 
     if (isHalfDay) {
       no_of_days = 0.5;
+    } else if (isShortLeave) {
+      no_of_days = 0; // Short leaves don't consume full day balance quota directly
     } else if (!no_of_days) {
       return res.status(400).json({ error: 'Number of days is required' });
     }
 
+    /* Short Leave Monthly Limit Check (Max 2 per month, renews every month) */
     if (isShortLeave) {
-      const now = new Date();
+      const now = new Date(start_date);
       const year = now.getFullYear();
       const month = now.getMonth();
       const firstDay = new Date(year, month, 1).toISOString().slice(0, 10);
@@ -159,6 +162,7 @@ router.all('/subject-approve/:id', authenticate, checkPrivilege('leave_approve')
     const cleanRemark = String(req.body.remark || '').trim();
     const currentUser = await getCurrentUser(req.user.id);
 
+   
     if (!currentUser?.signature_url) {
       return res.status(400).json({ error: 'Please save your digital signature before approving' });
     }
@@ -245,6 +249,7 @@ router.all('/cc-approve/:id', authenticate, checkPrivilege('leave_approve'), asy
     const cleanRemark = String(req.body.remark || '').trim();
     const currentUser = await getCurrentUser(req.user.id);
 
+    // 🌟 ඩිජිටල් අත්සන (Digital Signature) නොමැති නම් අනුමත කිරීම සම්පූර්ණයෙන්ම වැළැක්වීම
     if (!currentUser?.signature_url) {
       return res.status(400).json({ error: 'Please save your digital signature before approving' });
     }
@@ -313,13 +318,14 @@ router.all('/cc-approve/:id', authenticate, checkPrivilege('leave_approve'), asy
   }
 });
 
-/* 3. Final Approve Route (Secretary & Chairman) */
+/* 3. Final Approve Route (Secretary & Chairman) - Updates Leave Balance */
 router.all('/final-approve/:id', authenticate, checkPrivilege('leave_approve'), async (req, res) => {
   try {
     const leaveId = Number(req.params.id);
     const cleanRemark = String(req.body.remark || '').trim();
     const currentUser = await getCurrentUser(req.user.id);
 
+    // 🌟 ඩිජිටල් අත්සන (Digital Signature) නොමැති නම් අනුමත කිරීම සම්පූර්ණයෙන්ම වැළැක්වීම
     if (!currentUser?.signature_url) {
       return res.status(400).json({ error: 'Please save your digital signature before approving' });
     }
@@ -378,13 +384,14 @@ router.all('/final-approve/:id', authenticate, checkPrivilege('leave_approve'), 
 
     if (error) return res.status(400).json({ error: error.message });
 
+    /* 🌟 Leave Balance Deduction Logic (Half-Day & Regular Leaves) */
     const year = Number(leaveRequest.start_date.substring(0, 4));
     const leaveTypeName = leaveRequest.leave_types?.name_en?.toLowerCase() || '';
     
     let targetLeaveTypeId = leaveRequest.leave_type_id;
     let deductDays = Number(leaveRequest.no_of_days);
 
-    if (leaveTypeName.includes('short')) {
+    if (leaveTypeName.includes('half')) {
       const { data: casualType } = await supabase
         .from('leave_types')
         .select('id')
@@ -395,27 +402,31 @@ router.all('/final-approve/:id', authenticate, checkPrivilege('leave_approve'), 
         targetLeaveTypeId = casualType.id;
         deductDays = 0.5; 
       }
+    } else if (leaveTypeName.includes('short')) {
+      deductDays = 0;
     }
 
-    const { data: balance } = await supabase
-      .from('user_leave_balances')
-      .select('id, used_days, remaining_days')
-      .eq('user_id', leaveRequest.user_id)
-      .eq('leave_type_id', targetLeaveTypeId)
-      .eq('year', year)
-      .single();
-
-    if (balance) {
-      const newUsedDays = Number(balance.used_days) + deductDays;
-      const newRemainingDays = Math.max(Number(balance.remaining_days) - deductDays, 0);
-
-      await supabase
+    if (deductDays > 0) {
+      const { data: balance } = await supabase
         .from('user_leave_balances')
-        .update({
-          used_days: newUsedDays,
-          remaining_days: newRemainingDays
-        })
-        .eq('id', balance.id);
+        .select('id, used_days, remaining_days')
+        .eq('user_id', leaveRequest.user_id)
+        .eq('leave_type_id', targetLeaveTypeId)
+        .eq('year', year)
+        .single();
+
+      if (balance) {
+        const newUsedDays = Number(balance.used_days) + deductDays;
+        const newRemainingDays = Math.max(Number(balance.remaining_days) - deductDays, 0);
+
+        await supabase
+          .from('user_leave_balances')
+          .update({
+            used_days: newUsedDays,
+            remaining_days: newRemainingDays
+          })
+          .eq('id', balance.id);
+      }
     }
 
     await createNotification({

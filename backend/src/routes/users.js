@@ -20,7 +20,7 @@ router.get(
       const roleName = req.userRole; 
       const roleId = req.userData.role_id;
 
-      // Admin හැර අනෙක් සියලුම Roles සඳහා System Privileges (ටොගල්) පරීක්ෂා කිරීම
+      
       if (roleName !== 'Admin') {
         const { data: privData } = await supabase
           .from('role_privileges')
@@ -28,8 +28,6 @@ router.get(
           .eq('role_id', roleId)
           .eq('system_privileges.privilege_key', 'staff_view_profile')
           .maybeSingle();
-
-        // System Privileges පුවරුවෙන් Off කර ඇත්නම් ප්‍රවේශය සම්පූර්ණයෙන්ම අවහිර කරයි
         if (!privData || privData.is_enabled !== true) {
           return res.status(403).json({ 
             error: `Access denied. This privilege is disabled for your role (${roleName}).` 
