@@ -5,7 +5,7 @@
   "dashboard": "Dashboard",
   "dashboard_subtitle": "Monitor staff, leave, announcements and complaints from one workspace.",
   "workspace": "Workspace",
-  "welcome": "Welcome back",
+  "welcome": "Welcome",
   "welcome_back": "Welcome back",
   "loading": "Loading...",
   "records": "Records",
@@ -794,5 +794,13 @@
   "please_select_role": "Please select a role.",
   "privileges_updated_successfully": "Privileges updated successfully.",
   "system_privileges_title": "System Privileges",
-  "privileges_count_label": "privileges"
+  "privileges_count_label": "privileges",
+  "remove_photo": "Remove Photo",
+  "remove_signature": "Remove Signature",
+  "removing": "Removing...",
+  "photo_removed_success": "Profile photo removed successfully.",
+  "signature_removed_success": "Digital signature removed successfully.",
+  "photo_remove_failed": "Failed to remove photo",
+  "signature_remove_failed": "Failed to remove signature",
+  "audit_update_profile": "Profile Updated"
 }

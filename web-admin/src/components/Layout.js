@@ -39,11 +39,36 @@ function Layout({ children }) {
     }
   });
 
+  // Fetch latest user details (including fresh avatar_url) from Database
+  const fetchLatestUserData = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+
+      const { data, error } = await supabase
+        .from('users')
+        .select('*, roles(role_name, role_name_si, role_name_ta)')
+        .eq('auth_id', session.user.id)
+        .single();
+
+      if (!error && data) {
+        const mergedUser = { ...user, ...data, roles: data.roles };
+        setUser(mergedUser);
+        localStorage.setItem('user', JSON.stringify(mergedUser));
+      }
+    } catch (err) {
+      console.error('Error fetching latest user data in layout:', err);
+    }
+  };
+
   useEffect(() => {
+    fetchLatestUserData();
+
     const handleUserUpdate = () => {
       try {
         const updatedUser = JSON.parse(localStorage.getItem('user') || '{}');
         setUser(updatedUser);
+        fetchLatestUserData(); // Refetch from DB to ensure sync
       } catch (err) {
         console.error('Error updating user state:', err);
       }
@@ -528,7 +553,6 @@ function Layout({ children }) {
                     padding: '16px'
                   }}
                 >
-                  {/* "Mark all as read" button on top */}
                   {unreadCount > 0 && (
                     <div style={{ marginBottom: '10px', paddingBottom: '8px', borderBottom: '1px solid #f1f5f9', textAlign: 'right' }}>
                       <button
@@ -550,7 +574,6 @@ function Layout({ children }) {
                     </div>
                   )}
 
-                  {/* Header: Title and Close Button */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #f1f5f9', paddingBottom: '10px' }}>
                     <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '700', color: '#0f172a' }}>
                       {t('notifications') || 'Notifications'}
