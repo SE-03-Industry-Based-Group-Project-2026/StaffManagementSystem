@@ -31,7 +31,14 @@ export default function SignatureCard({ title, positionKey, image, lang, t }) {
   };
 
   const currentLang = lang || 'en';
-  const posObj = positionsMap[positionKey] || { en: positionKey || '', si: positionKey || '', ta: positionKey || '' };
+  
+
+  const normalizedKey = positionKey ? String(positionKey).toLowerCase().replace(/\s+/g, '_') : '';
+  const posObj = positionsMap[normalizedKey] || positionsMap[positionKey] || { 
+    en: positionKey || '', 
+    si: positionKey || '', 
+    ta: positionKey || '' 
+  };
   
   const displayPosition = posObj[currentLang] || posObj.en;
   const displayInstitution = institutionMap[currentLang] || institutionMap.en;

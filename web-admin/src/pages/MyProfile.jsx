@@ -8,7 +8,7 @@ import { showSuccess, showError } from '../services/toastService';
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
 function MyProfile() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
 
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
@@ -293,7 +293,7 @@ function MyProfile() {
     }
   };
 
-  // 🌟 Remove Digital Signature Function (Using Toast Messages)
+  // Remove Digital Signature Function
   const removeSignature = async () => {
     if (!profile?.signature_url) return;
 
@@ -456,7 +456,6 @@ function MyProfile() {
     }
   };
 
-  // 🌟 Remove Profile Photo Function (Using Toast Messages)
   const removePhoto = async () => {
     if (!profile?.avatar_url) return;
 
@@ -782,6 +781,8 @@ function MyProfile() {
                 >
                   {tr('current_signature', 'Current Signature')}
                 </div>
+                
+              
                 <img
                   src={profile.signature_url}
                   alt="Current signature"
@@ -793,9 +794,20 @@ function MyProfile() {
                     backgroundColor: '#fff',
                     border: '1px solid #e2e8f0',
                     borderRadius: 6,
-                    padding: 6
+                    padding: 6,
+                    marginBottom: 8
                   }}
                 />
+
+            
+                <div style={{ textAlign: 'center', maxWidth: 240, borderTop: '1px dashed #cbd5e1', paddingTop: 6, marginTop: 4 }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, color: '#1e293b' }}>
+                    {translatedRoleName}
+                  </div>
+                  <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                    {language === 'si' ? 'වැලිවිටිය දිවිතුර ප්‍රාදේශීය සභාව' : language === 'ta' ? 'வெலிவிட்டிக திவிதுர பிரதேச சபை' : 'Welivitiya Divithura Pradeshiya Sabha'}
+                  </div>
+                </div>
               </div>
 
               <button
