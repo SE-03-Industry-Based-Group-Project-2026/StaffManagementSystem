@@ -99,40 +99,48 @@ async function createNotification({
       messageTa = `பணியின் நிலை "${payload.status || ''}" என புதுப்பிக்கப்பட்டுள்ளது.`;
       break;
 
-    case 'complaint_reply':
-      titleEn = 'New response to your complaint';
-      messageEn = `Complaint (#[${payload.complaint_id || 'N/A'}]) has a new response.`;
-      titleSi = 'ඔබගේ පැමිණිල්ලට නව ප්‍රතිචාරයක් ලැබී ඇත:';
-      titleTa = 'உங்கள் புகாருக்கு புதிய பதில் கிடைத்துள்ளது:';
-      messageSi = `පැමිණිල්ල (#[${payload.complaint_id || 'N/A'}]) සඳහා නව ප්‍රතිචාරයක් ලැබී ඇත.`;
-      messageTa = `புகார் (#[${payload.complaint_id || 'N/A'}]) தொடர்பான புதிய பதில் வந்துள்ளது.`;
-      break;
 
-      case 'complaint_status_updated':
-      const rawStatus = String(payload.status || '').toLowerCase().trim();
+      case 'complaint_reply':
+        titleEn = 'New response to your complaint';
+        titleSi = 'ඔබගේ පැමිණිල්ලට නව ප්‍රතිචාරයක් ලැබී ඇත';
+        titleTa = 'உங்கள் புகாருக்கு புதிய பதில் கிடைத்துள்ளது';
+        
+        const msgEn = payload.reply_message_en || payload.reply_message || '';
+        const msgSi = payload.reply_message_si || payload.reply_message || '';
+        const msgTa = payload.reply_message_ta || payload.reply_message || '';
 
-      titleEn = 'Complaint Status Update';
-      titleSi = 'පැමිණිලි තත්ත්වය යාවත්කාලීන විය';
-      titleTa = 'புகார் நிலை புதுப்பிக்கப்பட்டது';
+        messageEn = `New response: ${msgEn}`;
+        messageSi = `නව ප්‍රතිචාරය: ${msgSi}`;
+        messageTa = `புதிய பதில்: ${msgTa}`;
+        break;
 
-      if (rawStatus === 'resolved') {
-        messageEn = 'Your complaint has been resolved.';
-        messageSi = 'ඔබගේ පැමිණිල්ල විසඳන ලදී';
-        messageTa = 'உங்கள் புகார் தீர்க்கப்பட்டுள்ளது';
-      } else if (rawStatus === 'in_progress' || rawStatus === 'inprogress' || rawStatus === 'processing') {
-        messageEn = 'Your complaint is in progress.';
-        messageSi = 'ඔබගේ පැමිණිල්ල ක්‍රියාත්මක වෙමින් පවතී';
-        messageTa = 'உங்கள் புகார் செயலாக்கத்தில் உள்ளது';
-      } else if (rawStatus === 'closed') {
-        messageEn = 'Your complaint has been closed.';
-        messageSi = 'ඔබගේ පැමිණිල්ල වසා දමන ලදී';
-        messageTa = 'உங்கள் புகார் மூடப்பட்டுள்ளது';
-      } else {
-        messageEn = `Complaint status updated to: ${payload.status || ''}`;
-        messageSi = `ඔබගේ පැමිණිල්ලේ තත්ත්වය: ${payload.status || ''}`;
-        messageTa = `புகாரின் நிலை: ${payload.status || ''}`;
-      }
-      break;
+        
+        case 'complaint_status_updated':
+        const rawStatus = String(payload.status || '').toLowerCase().trim();
+
+        titleEn = 'Complaint Status Update';
+        titleSi = 'පැමිණිලි තත්ත්වය යාවත්කාලීන විය';
+        titleTa = 'புகார் நிலை புதுப்பிக்கப்பட்டது';
+
+        if (rawStatus === 'resolved') {
+          messageEn = 'Your complaint has been resolved.';
+          messageSi = 'ඔබගේ පැමිණිල්ල විසඳන ලදී.';
+          messageTa = 'உங்கள் புகார் தீர்க்கப்பட்டுள்ளது.';
+        } 
+        
+        if (rawStatus === 'in progress') {
+          messageEn = 'Your complaint is in progress.';
+          messageSi = 'ඔබගේ පැමිණිල්ල ක්‍රියාත්මක වෙමින් පවතී.';
+          messageTa = 'உங்கள் புகார் செயலாக்கத்தில் உள்ளது.';
+        } 
+        
+        if (rawStatus === 'closed') {
+          messageEn = 'Your complaint has been closed.';
+          messageSi = 'ඔබගේ පැමිණිල්ල අවසන් කරන ලදී.';
+          messageTa = 'உங்கள் புகார் மூடப்பட்டுள்ளது.';
+        }
+        break;
+
 
     case 'privileges_updated':
       titleEn = 'System Privileges Updated';
