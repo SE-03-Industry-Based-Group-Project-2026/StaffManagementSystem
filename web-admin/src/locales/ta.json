@@ -793,5 +793,13 @@
   "failed_to_save_privileges": "அனுமதிகளைச் சேமிப்பதில் தோல்வி",
   "please_select_role": "தயவுசெய்து ஒரு பங்கைத் தேர்ந்தெடுக்கவும்.",
   "system_privileges_title": "கணினி அனுமதிகள்",
-  "privileges_count_label": "அனுமதிகள்"
+  "privileges_count_label": "அனுமதிகள்",
+  "remove_photo": "புகைப்படத்தை அகற்று",
+  "remove_signature": "கையொப்பத்தை அகற்று",
+  "removing": "அகற்றுகிறது...",
+  "photo_removed_success": "சுயவிவரப் புகைப்படம் வெற்றிகரமாக அகற்றப்பட்டது.",
+  "signature_removed_success": "டிஜிட்டல் கையொப்பம் வெற்றிகரமாக அகற்றப்பட்டது.",
+  "photo_remove_failed": "புகைப்படத்தை அகற்றுவதில் தோல்வி",
+  "signature_remove_failed": "கையொப்பத்தை அகற்றுவதில் தோல்வி",
+  "audit_update_profile": "சுயவிவரம் புதுப்பிக்கப்பட்டது"
 }

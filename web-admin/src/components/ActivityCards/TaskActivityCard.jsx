@@ -2,16 +2,16 @@ import React from "react";
 import AppIcon from "../AppIcon";
 import { useLanguage } from "../../context/LanguageContext";
 
-function formatTimeAgo(dateString) {
+function formatTimeAgo(dateString, t) {
   if (!dateString) return "";
   const date = new Date(dateString);
   const now = new Date();
   const diff = Math.floor((now - date) / 1000);
 
-  if (diff < 60) return "Just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`;
-  return `${Math.floor(diff / 86400)} day ago`;
+  if (diff < 60) return t('just_now') || "Just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)} ${t('min_ago') || 'min ago'}`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)} ${t('hr_ago') || 'hr ago'}`;
+  return `${Math.floor(diff / 86400)} ${t('day_ago') || 'day ago'}`;
 }
 
 export default function TaskActivityCard({ log, details, t }) {
@@ -53,7 +53,7 @@ export default function TaskActivityCard({ log, details, t }) {
           </div>
           <div>
             <div style={{ fontWeight: 700, color: "var(--text)", fontSize: 15 }}>{translatedAction}</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{formatTimeAgo(log?.created_at)}</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{formatTimeAgo(log?.created_at, t)}</div>
           </div>
         </div>
         <span style={{ padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, ...statusStyle }}>
@@ -76,7 +76,7 @@ export default function TaskActivityCard({ log, details, t }) {
       {details?.due_date && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--muted)", fontSize: 14 }}>
           <AppIcon name="calendar" size={15} />
-          {details.due_date}
+          {t("due_date", "Due Date")} : {details.due_date}
         </div>
       )}
     </div>

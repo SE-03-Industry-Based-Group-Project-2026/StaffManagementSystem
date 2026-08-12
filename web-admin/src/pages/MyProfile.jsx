@@ -18,6 +18,8 @@ function MyProfile() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [removingSignature, setRemovingSignature] = useState(false);
+  const [removingPhoto, setRemovingPhoto] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
 
   // States for Change Password form and Eye Icon toggles
@@ -291,6 +293,51 @@ function MyProfile() {
     }
   };
 
+  // 🌟 Remove Digital Signature Function (Using Toast Messages)
+  const removeSignature = async () => {
+    if (!profile?.signature_url) return;
+
+    try {
+      setRemovingSignature(true);
+
+      try {
+        const oldPathMarker = '/storage/v1/object/public/signatures/';
+        const oldPathIndex = profile.signature_url.indexOf(oldPathMarker);
+        if (oldPathIndex !== -1) {
+          const oldPath = decodeURIComponent(
+            profile.signature_url.substring(oldPathIndex + oldPathMarker.length)
+          );
+          await supabase.storage.from('signatures').remove([oldPath]);
+        }
+      } catch (err) {
+        console.warn('Storage signature delete warning:', err);
+      }
+
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE}/profile/update`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ signature_url: null })
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to remove signature');
+
+      setProfile({ ...profile, signature_url: null });
+      const currentStoredUser = JSON.parse(localStorage.getItem('user')) || {};
+      currentStoredUser.signature_url = null;
+      localStorage.setItem('user', JSON.stringify(currentStoredUser));
+      window.dispatchEvent(new Event('userUpdated'));
+
+      showSuccess(tr('signature_removed_success', 'Digital signature removed successfully.'));
+    } catch (error) {
+      console.error(error);
+      showError(error.message || tr('signature_remove_failed', 'Failed to remove signature'));
+    } finally {
+      setRemovingSignature(false);
+    }
+  };
+
   // Handle password update submission
   const handlePasswordChange = async (e) => {
     e.preventDefault();
@@ -409,11 +456,68 @@ function MyProfile() {
     }
   };
 
+  // 🌟 Remove Profile Photo Function (Using Toast Messages)
+  const removePhoto = async () => {
+    if (!profile?.avatar_url) return;
+
+    try {
+      setRemovingPhoto(true);
+
+      try {
+        const oldPathMarker = '/storage/v1/object/public/avatars/';
+        const oldPathIndex = profile.avatar_url.indexOf(oldPathMarker);
+        if (oldPathIndex !== -1) {
+          const oldPath = decodeURIComponent(
+            profile.avatar_url.substring(oldPathIndex + oldPathMarker.length)
+          );
+          await supabase.storage.from('avatars').remove([oldPath]);
+        }
+      } catch (err) {
+        console.warn('Storage avatar delete warning:', err);
+      }
+
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE}/profile/update`, {
+        method: 'PUT',
+        headers,
+        body: JSON.stringify({ avatar_url: null })
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Failed to remove photo');
+
+      setProfile({ ...profile, avatar_url: null });
+      const currentStoredUser = JSON.parse(localStorage.getItem('user')) || {};
+      currentStoredUser.avatar_url = null;
+      currentStoredUser.profile_photo = null;
+      currentStoredUser.profile_image = null;
+      localStorage.setItem('user', JSON.stringify(currentStoredUser));
+      window.dispatchEvent(new Event('userUpdated'));
+
+      showSuccess(tr('photo_removed_success', 'Profile photo removed successfully.'));
+    } catch (error) {
+      console.error(error);
+      showError(error.message || tr('photo_remove_failed', 'Failed to remove photo'));
+    } finally {
+      setRemovingPhoto(false);
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
-        <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>
-          <div className="spinner-icon" />{tr('loading_profile_details', 'Loading profile details...')}
+        <div style={{ 
+          display: 'flex', 
+          flexDirection: 'column', 
+          justifyContent: 'center', 
+          alignItems: 'center', 
+          height: '80vh', 
+          textAlign: 'center', 
+          color: '#64748b',
+          gap: 12 
+        }}>
+          <div className="spinner-icon" />
+          <span>{tr('loading_profile_details', 'Loading profile details...')}</span>
         </div>
       </Layout>
     );
@@ -554,22 +658,45 @@ function MyProfile() {
                 style={{ display: 'none' }}
                 onChange={handlePhotoUpload}
               />
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => photoInputRef.current?.click()}
-                style={{
-                  marginTop: 14,
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '6px 14px',
-                  fontSize: 13
-                }}
-              >
-                <AppIcon name="edit" size={14} />
-                {tr('change_photo', 'Change Photo')}
-              </button>
+              <div style={{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => photoInputRef.current?.click()}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: '6px 14px',
+                    fontSize: 13
+                  }}
+                >
+                  <AppIcon name="edit" size={14} />
+                  {tr('change_photo', 'Change Photo')}
+                </button>
+
+                {profile?.avatar_url && (
+                  <button
+                    type="button"
+                    className="btn btn-soft"
+                    onClick={removePhoto}
+                    disabled={removingPhoto}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 14px',
+                      fontSize: 13,
+                      color: '#dc2626',
+                      borderColor: '#fecaca',
+                      backgroundColor: '#fef2f2'
+                    }}
+                  >
+                    <AppIcon name="x" size={14} />
+                    {removingPhoto ? tr('removing', 'Removing...') : tr('remove_photo', 'Remove Photo')}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -634,35 +761,63 @@ function MyProfile() {
                 border: '1px solid #e2e8f0',
                 borderRadius: 10,
                 background: '#fafafa',
-                maxWidth: 600
+                maxWidth: 600,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 12
               }}
             >
-              <div
+              <div>
+                <div
+                  style={{
+                    fontWeight: 600,
+                    marginBottom: 8,
+                    fontSize: 12,
+                    color: '#475569',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.03em'
+                  }}
+                >
+                  {tr('current_signature', 'Current Signature')}
+                </div>
+                <img
+                  src={profile.signature_url}
+                  alt="Current signature"
+                  style={{
+                    display: 'block',
+                    maxWidth: 240,
+                    maxHeight: 80,
+                    objectFit: 'contain',
+                    backgroundColor: '#fff',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 6,
+                    padding: 6
+                  }}
+                />
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-soft"
+                onClick={removeSignature}
+                disabled={removingSignature}
                 style={{
-                  fontWeight: 600,
-                  marginBottom: 8,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '8px 14px',
                   fontSize: 12,
-                  color: '#475569',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.03em'
+                  color: '#dc2626',
+                  borderColor: '#fecaca',
+                  backgroundColor: '#fef2f2',
+                  alignSelf: 'flex-end'
                 }}
               >
-                {tr('current_signature', 'Current Signature')}
-              </div>
-              <img
-                src={profile.signature_url}
-                alt="Current signature"
-                style={{
-                  display: 'block',
-                  maxWidth: 240,
-                  maxHeight: 80,
-                  objectFit: 'contain',
-                  backgroundColor: '#fff',
-                  border: '1px solid #e2e8f0',
-                  borderRadius: 6,
-                  padding: 6
-                }}
-              />
+                <AppIcon name="x" size={14} />
+                {removingSignature ? tr('removing', 'Removing...') : tr('remove_signature', 'Remove Signature')}
+              </button>
             </div>
           )}
 

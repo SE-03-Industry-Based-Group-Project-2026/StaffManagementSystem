@@ -246,7 +246,7 @@ function Login() {
               <UserIcon />
             </div>
 
-            <h2 style={styles.welcomeTitle}>{t('welcome_back') || 'Welcome back'}</h2>
+            <h2 style={styles.welcomeTitle}>{t('welcome') || 'Welcome'}</h2>
             <p style={styles.welcomeSubtitle}>
               {t('login_instructions') || 'Enter your credentials to access the official portal'}
             </p>
