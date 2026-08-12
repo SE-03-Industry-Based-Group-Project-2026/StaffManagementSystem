@@ -38,6 +38,39 @@ async function safeTranslate(text) {
   }
 }
 
+
+async function ensureLeaveBalanceForYear(userId, year) {
+  try {
+    const { data: existing } = await supabase
+      .from('user_leave_balances')
+      .select('id')
+      .eq('user_id', userId)
+      .eq('year', year)
+      .limit(1);
+
+    if (existing && existing.length > 0) return;
+
+    const { data: leaveTypes } = await supabase
+      .from('leave_types')
+      .select('*');
+
+    if (leaveTypes && leaveTypes.length > 0) {
+      const newBalances = leaveTypes.map((lt) => ({
+        user_id: userId,
+        leave_type_id: lt.id,
+        year: year,
+        allocated_days: lt.max_days || 0,
+        used_days: 0,
+        remaining_days: lt.max_days || 0
+      }));
+
+      await supabase.from('user_leave_balances').insert(newBalances);
+    }
+  } catch (err) {
+    console.error('Error ensuring leave balance for year:', err);
+  }
+}
+
 /* 0. Submit Leave Request  */
 router.post('/apply', authenticate, checkPrivilege('leave_add'), async (req, res) => {
   try {
@@ -52,6 +85,10 @@ router.post('/apply', authenticate, checkPrivilege('leave_add'), async (req, res
       return res.status(400).json({ error: 'All required leave fields must be filled' });
     }
 
+    // 🌟 ලීව් එකක් දමන විට අදාළ වසරට අදාළ Balance එක ඇත්දැයි පරීක්ෂා කර ස්වයංක්‍රීයව සෑදීම
+    const requestYear = Number(start_date.substring(0, 4));
+    await ensureLeaveBalanceForYear(currentUser.id, requestYear);
+
     const { data: leaveTypeData } = await supabase
       .from('leave_types')
       .select('name_en')
@@ -65,7 +102,7 @@ router.post('/apply', authenticate, checkPrivilege('leave_add'), async (req, res
     if (isHalfDay) {
       no_of_days = 0.5;
     } else if (isShortLeave) {
-      no_of_days = 0; // Short leaves don't consume full day balance quota directly
+      no_of_days = 0; 
     } else if (!no_of_days) {
       return res.status(400).json({ error: 'Number of days is required' });
     }
@@ -162,8 +199,9 @@ router.all('/subject-approve/:id', authenticate, checkPrivilege('leave_approve')
     const cleanRemark = String(req.body.remark || '').trim();
     const currentUser = await getCurrentUser(req.user.id);
 
-   
-    if (!currentUser?.signature_url) {
+    // 🌟 දැඩි අත්සන පරීක්ෂාව (Strict Signature Validation)
+    const sig = String(currentUser?.signature_url || '').trim();
+    if (!sig || sig === 'null' || sig === 'undefined') {
       return res.status(400).json({ error: 'Please save your digital signature before approving' });
     }
 
@@ -249,8 +287,8 @@ router.all('/cc-approve/:id', authenticate, checkPrivilege('leave_approve'), asy
     const cleanRemark = String(req.body.remark || '').trim();
     const currentUser = await getCurrentUser(req.user.id);
 
-    // 🌟 ඩිජිටල් අත්සන (Digital Signature) නොමැති නම් අනුමත කිරීම සම්පූර්ණයෙන්ම වැළැක්වීම
-    if (!currentUser?.signature_url) {
+    const sig = String(currentUser?.signature_url || '').trim();
+    if (!sig || sig === 'null' || sig === 'undefined') {
       return res.status(400).json({ error: 'Please save your digital signature before approving' });
     }
 
@@ -325,8 +363,9 @@ router.all('/final-approve/:id', authenticate, checkPrivilege('leave_approve'), 
     const cleanRemark = String(req.body.remark || '').trim();
     const currentUser = await getCurrentUser(req.user.id);
 
-    // 🌟 ඩිජිටල් අත්සන (Digital Signature) නොමැති නම් අනුමත කිරීම සම්පූර්ණයෙන්ම වැළැක්වීම
-    if (!currentUser?.signature_url) {
+    // 🌟 දැඩි අත්සන පරීක්ෂාව (Strict Signature Validation)
+    const sig = String(currentUser?.signature_url || '').trim();
+    if (!sig || sig === 'null' || sig === 'undefined') {
       return res.status(400).json({ error: 'Please save your digital signature before approving' });
     }
 
@@ -384,8 +423,11 @@ router.all('/final-approve/:id', authenticate, checkPrivilege('leave_approve'), 
 
     if (error) return res.status(400).json({ error: error.message });
 
-    /* 🌟 Leave Balance Deduction Logic (Half-Day & Regular Leaves) */
     const year = Number(leaveRequest.start_date.substring(0, 4));
+    
+
+    await ensureLeaveBalanceForYear(leaveRequest.user_id, year);
+
     const leaveTypeName = leaveRequest.leave_types?.name_en?.toLowerCase() || '';
     
     let targetLeaveTypeId = leaveRequest.leave_type_id;
@@ -620,6 +662,9 @@ router.get('/my-leave-balances', authenticate, checkPrivilege('leave_view'), asy
   try {
     const currentUser = await getCurrentUser(req.user.id);
     const year = Number(req.query.year) || new Date().getFullYear();
+
+
+    await ensureLeaveBalanceForYear(currentUser.id, year);
 
     const { data: balances, error } = await supabase
       .from('user_leave_balances')
