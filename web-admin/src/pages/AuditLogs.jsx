@@ -99,7 +99,7 @@ function AuditLogs() {
     let cleanTitle = String(title || '').trim();
     let cleanName = String(name || '').trim();
 
-    if (!cleanName) return 'System';
+    if (!cleanName) return t('system')  ;
 
     if (cleanTitle) {
       const lower = cleanTitle.toLowerCase().replace('.', '');
