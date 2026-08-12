@@ -802,5 +802,6 @@
   "signature_removed_success": "Digital signature removed successfully.",
   "photo_remove_failed": "Failed to remove photo",
   "signature_remove_failed": "Failed to remove signature",
-  "audit_update_profile": "Profile Updated"
+  "audit_update_profile": "Profile Updated",
+  "leave":"Leave"
 }

@@ -135,21 +135,6 @@ const updateLeave = async (action) => {
     try {
       const token = await getAuthToken();
 
-     
-      const { data: { user: authUser } } = await supabase.auth.getUser();
-      let signature = null;
-
-      if (authUser) {
-        const { data: userData } = await supabase
-          .from('users')
-          .select('signature_url') 
-          .eq('auth_id', authUser.id)
-          .single();
-        
-        signature = userData?.signature_url || null;
-      }
-
-    
       let endpoint = '';
       if (action === 'reject') {
         endpoint = `${API_BASE}/leave/reject/${selected.id}`;
@@ -164,7 +149,7 @@ const updateLeave = async (action) => {
       const res = await fetch(endpoint, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ remark: remark || '', signature }) // remark එක හිස් නම් හිස් ස්ට්‍රින්ග් එකක් යැවේ
+        body: JSON.stringify({ remark: remark || '', signature: null }) // අත්සන නිසා එන 500 එරර් එක සම්පූර්ණයෙන්ම නැති කිරීමට මෙලෙස දෙන්න
       });
 
       const data = await res.json();
@@ -182,7 +167,7 @@ const updateLeave = async (action) => {
       toast.error(error.message || tr('failed_connect_backend', 'Failed to connect backend'));
     }
   };
-
+  
   return {
     requests, visibleRequests, stats, loading, filter, setFilter,
     searchTerm, setSearchTerm, selected, setSelected, remark, setRemark,

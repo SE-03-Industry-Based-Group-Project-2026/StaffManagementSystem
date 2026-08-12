@@ -164,7 +164,8 @@ router.post(
 
       let expiresAt = null;
       if (expires_at) {
-        expiresAt = new Date(expires_at + '+05:30').toISOString();
+        const parsedDate = new Date(expires_at);
+        expiresAt = !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : null;
       }
 
       const { data, error } = await supabase
@@ -329,7 +330,8 @@ router.put(
       let expiresAt = existingAnnouncement.expires_at;
 
       if (expires_at) {
-        expiresAt = new Date(expires_at + '+05:30').toISOString();
+        const parsedDate = new Date(expires_at);
+        expiresAt = !isNaN(parsedDate.getTime()) ? parsedDate.toISOString() : existingAnnouncement.expires_at;
       }
 
       const { data, error } = await supabase

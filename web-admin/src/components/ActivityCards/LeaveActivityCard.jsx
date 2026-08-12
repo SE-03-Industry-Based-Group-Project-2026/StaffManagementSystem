@@ -1,19 +1,23 @@
 import React from "react";
 import AppIcon from "../AppIcon";
 
-function formatTimeAgo(dateString) {
+function formatTimeAgo(dateString, t) {
   if (!dateString) return "";
   const date = new Date(dateString);
   const now = new Date();
   const diff = Math.floor((now - date) / 1000);
 
-  if (diff < 60) return "Just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`;
-  return `${Math.floor(diff / 86400)} day ago`;
+  const mins = Math.floor(diff / 60);
+  const hrs = Math.floor(diff / 3600);
+  const days = Math.floor(diff / 86400);
+
+  if (diff < 60) return t('just_now') || "Just now";
+  if (diff < 3600) return `${mins} ${t('min_ago') || 'min ago'}`;
+  if (diff < 86400) return `${hrs} ${t('hr_ago') || 'hr ago'}`;
+  return `${days} ${t('day_ago') || 'day ago'}`;
 }
 
-export default function LeaveActivityCard({ log, details, t }) {
+export default function LeaveActivityCard({ log, details, t, lang }) {
   const userNameRaw = log?.user?.full_name || log?.users?.full_name || details?.full_name || "-";
   
   let userName = userNameRaw;
@@ -26,21 +30,14 @@ export default function LeaveActivityCard({ log, details, t }) {
   const actionKey = `audit_${actionStr}`;
   const translatedAction = t(actionKey) !== actionKey ? t(actionKey) : log?.action || "Leave Action";
 
+  let leaveText = t('leave');
+  if (!leaveText || leaveText === 'leave') {
+    if (lang === 'si') leaveText = 'නිවාඩු';
+    else if (lang === 'ta') leaveText = 'விடுப்பு';
+    else leaveText = 'Leave';
+  }
 
-  const rawStatus = details?.status || 'Pending';
-  const statusKey = rawStatus.toLowerCase().replace(/\s+/g, '_');
-  const statusKeyWithPrefix = `leave_status_${statusKey}`;
-  const translatedStatus = t(statusKeyWithPrefix) !== statusKeyWithPrefix 
-    ? t(statusKeyWithPrefix) 
-    : (t(rawStatus.toLowerCase()) !== rawStatus.toLowerCase() ? t(rawStatus.toLowerCase()) : rawStatus);
-
-  const statusLower = rawStatus.toLowerCase();
-  const statusStyle = statusLower.includes('approved') || statusLower === 'resolved'
-    ? { backgroundColor: '#dcfce7', color: '#16a34a' }
-    : statusLower === 'rejected' || statusLower === 'cancelled'
-    ? { backgroundColor: '#fee2e2', color: '#dc2626' }
-    : { backgroundColor: '#dbeafe', color: '#2563eb' };
-
+  const badgeStyle = { backgroundColor: '#dbeafe', color: '#2563eb' };
 
   const rawLeaveType = details?.leave_type || '';
   const leaveTypeKey = `leave_type_${rawLeaveType.toLowerCase().replace(/\s+/g, '_')}`;
@@ -55,12 +52,12 @@ export default function LeaveActivityCard({ log, details, t }) {
           </div>
           <div>
             <div style={{ fontWeight: 700, color: "var(--text)", fontSize: 15 }}>{translatedAction}</div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{formatTimeAgo(log?.created_at)}</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 2 }}>{formatTimeAgo(log?.created_at, t)}</div>
           </div>
         </div>
 
-        <span style={{ padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, ...statusStyle }}>
-          {translatedStatus}
+        <span style={{ padding: '5px 12px', borderRadius: 999, fontSize: 12, fontWeight: 700, ...badgeStyle }}>
+          {leaveText}
         </span>
       </div>
 

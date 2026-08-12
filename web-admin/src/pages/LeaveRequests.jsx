@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useLanguage } from '../context/LanguageContext';
 import Layout from '../components/Layout';
-import { PageHero, StatCard, EmptyState, statusBadge } from '../components/PageParts';
+import { PageHero, StatCard, EmptyState } from '../components/PageParts';
 import AppIcon from '../components/AppIcon';
 import LeaveReviewModal from '../components/LeaveReviewModal';
 import { useLeaveRequests } from '../hooks/useLeaveRequests';
@@ -20,6 +20,15 @@ function LeaveRequests() {
   const { t, language } = useLanguage();
   const location = useLocation();
   const tr = (key, fallback) => (t(key) && t(key) !== key ? t(key) : fallback);
+  
+  const getStatusLabel = (status) => {
+    if (!status) return '-';
+    const s = String(status).toLowerCase();
+    if (s.includes('approved')) return tr('approved', 'Approved');
+    if (s === 'rejected') return tr('rejected', 'Rejected');
+    if (s === 'pending') return tr('pending', 'Pending');
+    return status;
+  };
 
   const {
     visibleRequests,
@@ -333,7 +342,16 @@ function LeaveRequests() {
                         </div>
                       </td>
 
-                      <td style={{ padding: '14px 16px', textAlign: 'center' }}>{statusBadge(req.status)}</td>
+                      <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                        <span style={{ 
+                          padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                          backgroundColor: req.status?.toLowerCase().includes('approved') ? '#dcfce7' : req.status === 'Rejected' ? '#fee2e2' : '#fef3c7',
+                          color: req.status?.toLowerCase().includes('approved') ? '#16a34a' : req.status === 'Rejected' ? '#dc2626' : '#d97706'
+                        }}>
+                          {getStatusLabel(req.status)}
+                        </span>
+                      </td>
+
                       <td style={{ padding: '14px 16px', textAlign: 'right' }}>
                         <button 
                           style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '8px', display: 'inline-flex', alignItems: 'center', gap: 6 }}

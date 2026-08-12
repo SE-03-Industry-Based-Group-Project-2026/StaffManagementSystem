@@ -11,7 +11,7 @@
   "records": "වාර්තා",
   "timestamp": "වේලාව",
   "user": "පරිශීලක",
-  "employee": "සේවක",
+  "employee": "සේවකයා",
   "staff": "කාර්ය මණ්ඩලය",
   "staff_members": "කාර්ය මණ්ඩල සාමාජිකයින්",
   "name": "නම",
@@ -801,5 +801,6 @@
   "signature_removed_success": "ඩිජිටල් අත්සන සාර්ථකව ඉවත් කරන ලදී.",
   "photo_remove_failed": "ඡායාරූපය ඉවත් කිරීම අසමත් විය",
   "signature_remove_failed": "අත්සන ඉවත් කිරීම අසමත් විය",
-  "audit_update_profile": "පැතිකඩ යාවත්කාලීන කරන ලදී"
+  "audit_update_profile": "පැතිකඩ යාවත්කාලීන කරන ලදී",
+  "leave":"නිවාඩු"
 }

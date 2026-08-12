@@ -801,5 +801,6 @@
   "signature_removed_success": "டிஜிட்டல் கையொப்பம் வெற்றிகரமாக அகற்றப்பட்டது.",
   "photo_remove_failed": "புகைப்படத்தை அகற்றுவதில் தோல்வி",
   "signature_remove_failed": "கையொப்பத்தை அகற்றுவதில் தோல்வி",
-  "audit_update_profile": "சுயவிவரம் புதுப்பிக்கப்பட்டது"
+  "audit_update_profile": "சுயவிவரம் புதுப்பிக்கப்பட்டது",
+  "leave":"விடுப்பு"
 }
