@@ -38,7 +38,6 @@ async function safeTranslate(text) {
   }
 }
 
-
 async function ensureLeaveBalanceForYear(userId, year) {
   try {
     const { data: existing } = await supabase
@@ -85,7 +84,6 @@ router.post('/apply', authenticate, checkPrivilege('leave_add'), async (req, res
       return res.status(400).json({ error: 'All required leave fields must be filled' });
     }
 
-    // 🌟 ලීව් එකක් දමන විට අදාළ වසරට අදාළ Balance එක ඇත්දැයි පරීක්ෂා කර ස්වයංක්‍රීයව සෑදීම
     const requestYear = Number(start_date.substring(0, 4));
     await ensureLeaveBalanceForYear(currentUser.id, requestYear);
 
@@ -107,7 +105,6 @@ router.post('/apply', authenticate, checkPrivilege('leave_add'), async (req, res
       return res.status(400).json({ error: 'Number of days is required' });
     }
 
-    /* Short Leave Monthly Limit Check (Max 2 per month, renews every month) */
     if (isShortLeave) {
       const now = new Date(start_date);
       const year = now.getFullYear();
@@ -179,7 +176,12 @@ router.post('/apply', authenticate, checkPrivilege('leave_add'), async (req, res
       });
     }
 
-    await logAudit(currentUser.id, 'LEAVE_APPLIED', 'leave_requests', leaveData.id);
+    await logAudit(currentUser.id, 'LEAVE_APPLIED', 'leave_requests', leaveData.id, {
+      status: 'Pending',
+      leave_type: leaveTypeData?.name_en || 'Leave',
+      start_date,
+      end_date
+    });
 
     return res.status(201).json({
       success: true,
@@ -199,7 +201,6 @@ router.all('/subject-approve/:id', authenticate, checkPrivilege('leave_approve')
     const cleanRemark = String(req.body.remark || '').trim();
     const currentUser = await getCurrentUser(req.user.id);
 
-    // 🌟 දැඩි අත්සන පරීක්ෂාව (Strict Signature Validation)
     const sig = String(currentUser?.signature_url || '').trim();
     if (!sig || sig === 'null' || sig === 'undefined') {
       return res.status(400).json({ error: 'Please save your digital signature before approving' });
@@ -207,7 +208,7 @@ router.all('/subject-approve/:id', authenticate, checkPrivilege('leave_approve')
 
     const { data: leaveRequest, error: findError } = await supabase
       .from('leave_requests')
-      .select('*')
+      .select('*, leave_types(name_en)')
       .eq('id', leaveId)
       .single();
 
@@ -273,7 +274,13 @@ router.all('/subject-approve/:id', authenticate, checkPrivilege('leave_approve')
       });
     }
 
-    await logAudit(currentUser.id, 'SUBJECT_APPROVED', 'leave_requests', leaveId);
+    await logAudit(currentUser.id, 'SUBJECT_APPROVED', 'leave_requests', leaveId, {
+      status: 'Subject Approved',
+      leave_type: leaveRequest.leave_types?.name_en || 'Leave',
+      start_date: leaveRequest.start_date,
+      end_date: leaveRequest.end_date
+    });
+
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -294,7 +301,7 @@ router.all('/cc-approve/:id', authenticate, checkPrivilege('leave_approve'), asy
 
     const { data: leaveRequest, error: findError } = await supabase
       .from('leave_requests')
-      .select('*')
+      .select('*, leave_types(name_en)')
       .eq('id', leaveId)
       .single();
 
@@ -349,7 +356,13 @@ router.all('/cc-approve/:id', authenticate, checkPrivilege('leave_approve'), asy
       });
     }
 
-    await logAudit(currentUser.id, 'CC_APPROVED', 'leave_requests', leaveId);
+    await logAudit(currentUser.id, 'CC_APPROVED', 'leave_requests', leaveId, {
+      status: 'CC Approved',
+      leave_type: leaveRequest.leave_types?.name_en || 'Leave',
+      start_date: leaveRequest.start_date,
+      end_date: leaveRequest.end_date
+    });
+
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -363,7 +376,6 @@ router.all('/final-approve/:id', authenticate, checkPrivilege('leave_approve'), 
     const cleanRemark = String(req.body.remark || '').trim();
     const currentUser = await getCurrentUser(req.user.id);
 
-    // 🌟 දැඩි අත්සන පරීක්ෂාව (Strict Signature Validation)
     const sig = String(currentUser?.signature_url || '').trim();
     if (!sig || sig === 'null' || sig === 'undefined') {
       return res.status(400).json({ error: 'Please save your digital signature before approving' });
@@ -424,8 +436,6 @@ router.all('/final-approve/:id', authenticate, checkPrivilege('leave_approve'), 
     if (error) return res.status(400).json({ error: error.message });
 
     const year = Number(leaveRequest.start_date.substring(0, 4));
-    
-
     await ensureLeaveBalanceForYear(leaveRequest.user_id, year);
 
     const leaveTypeName = leaveRequest.leave_types?.name_en?.toLowerCase() || '';
@@ -504,7 +514,13 @@ router.all('/final-approve/:id', authenticate, checkPrivilege('leave_approve'), 
       currentUser.id,
       role === 'Secretary' ? 'SECRETARY_APPROVED' : 'CHAIRMAN_APPROVED',
       'leave_requests',
-      leaveId
+      leaveId,
+      {
+        status: 'Approved',
+        leave_type: leaveRequest.leave_types?.name_en || 'Leave',
+        start_date: leaveRequest.start_date,
+        end_date: leaveRequest.end_date
+      }
     );
 
     return res.json({ success: true, data });
@@ -523,7 +539,7 @@ router.all('/reject/:id', authenticate, checkPrivilege('leave_reject'), async (r
 
     const { data: leaveRequest, error: findError } = await supabase
       .from('leave_requests')
-      .select('*')
+      .select('*, leave_types(name_en)')
       .eq('id', leaveId)
       .single();
 
@@ -576,7 +592,13 @@ router.all('/reject/:id', authenticate, checkPrivilege('leave_reject'), async (r
       createdBy: currentUser.id
     });
 
-    await logAudit(currentUser.id, 'LEAVE_REJECTED', 'leave_requests', leaveId);
+    await logAudit(currentUser.id, 'LEAVE_REJECTED', 'leave_requests', leaveId, {
+      status: 'Rejected',
+      leave_type: leaveRequest.leave_types?.name_en || 'Leave',
+      start_date: leaveRequest.start_date,
+      end_date: leaveRequest.end_date
+    });
+
     return res.json({ success: true, data });
   } catch (error) {
     return res.status(500).json({ error: error.message });
@@ -662,7 +684,6 @@ router.get('/my-leave-balances', authenticate, checkPrivilege('leave_view'), asy
   try {
     const currentUser = await getCurrentUser(req.user.id);
     const year = Number(req.query.year) || new Date().getFullYear();
-
 
     await ensureLeaveBalanceForYear(currentUser.id, year);
 
