@@ -66,7 +66,8 @@ export default function LeaveBalanceCard({ t, tr, lang, refreshTrigger }) {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 10 }}>
           <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span>📊</span> {t('leave_balance_chart') || tr('leave_balance_chart', 'Leave Balance Chart')}
+            <span>
+              </span> {t('leave_balance_chart') || tr('leave_balance_chart', 'Leave Balance Chart')}
           </h3>
           
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -164,12 +165,11 @@ export default function LeaveBalanceCard({ t, tr, lang, refreshTrigger }) {
                       <td style={{ padding: '12px', textAlign: 'center', fontWeight: 600 }}>{req.no_of_days}</td>
                       <td style={{ padding: '12px', textAlign: 'center' }}>
                         <span style={{ 
-                          padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
-                          backgroundColor: req.status === 'Approved' ? '#dcfce7' : req.status === 'Rejected' ? '#fee2e2' : '#fef3c7',
-                          color: req.status === 'Approved' ? '#16a34a' : req.status === 'Rejected' ? '#dc2626' : '#d97706'
-                        }}>
-                          {req.status}
-                        </span>
+                                padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
+                                backgroundColor: req.status?.toLowerCase().includes('approved') ? '#dcfce7' : req.status === 'Rejected' ? '#fee2e2' : '#fef3c7',
+                                color: req.status?.toLowerCase().includes('approved') ? '#16a34a' : req.status === 'Rejected' ? '#dc2626' : '#d97706'
+                              }}>
+                                {req.status?.toLowerCase().includes('approved') ? tr('approved', 'Approved') : req.status === 'Rejected' ? tr('rejected', 'Rejected') : req.status === 'Pending' ? tr('pending', 'Pending') : req.status}</span>
                       </td>
                     </tr>
                   );

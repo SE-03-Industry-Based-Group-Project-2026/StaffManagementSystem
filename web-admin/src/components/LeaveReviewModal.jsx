@@ -27,6 +27,16 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
   const isShortLeave = selected.leave_types?.name_en?.toLowerCase().includes('short');
   const employeeId = selected.user_id || selected.users?.id;
 
+  // සිංහල සහ දෙමළ පරිවර්තන සඳහා ස්ටේටස් හඳුනාගැනීමේ ෆන්ෂන් එක
+  const getStatusLabel = (status) => {
+    if (!status) return '-';
+    const s = status.toLowerCase();
+    if (s.includes('approved')) return tr('approved', 'Approved');
+    if (s === 'rejected') return tr('rejected', 'Rejected');
+    if (s === 'pending') return tr('pending', 'Pending');
+    return status;
+  };
+
   useEffect(() => {
     const checkUserSignature = async () => {
       const userStr = localStorage.getItem('user');
@@ -150,6 +160,13 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
   const maxDaysLimit = 25;
   const chartHeight = 160;
 
+  // වෝනිං මැසේජ් එක සඳහා සිංහල සහ දෙමළ පරිවර්තන එකතු කිරීම
+  const getSignatureWarningText = () => {
+    if (lang === 'si') return '⚠️ නිවාඩු ඉල්ලුම්පත්‍ර අනුමත කිරීමට පෙර කරුණාකර ඔබේ පැතිකඩෙහි (Profile) ඩිජිටල් අත්සනක් (Digital Signature) ඇතුළත් කරන්න.';
+    if (lang === 'ta') return '⚠️ விடுப்பு விண்ணப்பங்களை அங்கீகரிப்பதற்கு முன் உங்கள் சுயவிவரத்தில் டிஜிட்டல் கையொப்பத்தைச் சேமிக்க வேண்டும்.';
+    return tr('signature_required_warning', 'You must save your digital signature in your profile before you can approve leave requests.');
+  };
+
   return (
     <div className="modal-backdrop" onClick={() => setSelected(null)}>
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '800px', width: '90%' }}>
@@ -164,7 +181,7 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
           
           {!hasSignature && (
             <div style={{ padding: '12px 16px', backgroundColor: '#fee2e2', color: '#dc2626', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', fontWeight: '600' }}>
-              ⚠️ {tr('signature_required_warning', 'You must save your digital signature in your profile before you can approve leave requests.')}
+              {getSignatureWarningText()}
             </div>
           )}
 
@@ -303,10 +320,10 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
                         <td style={{ padding: '6px', textAlign: 'center' }}>
                           <span style={{ 
                             padding: '2px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 600,
-                            backgroundColor: hist.status === 'Approved' ? '#dcfce7' : hist.status === 'Rejected' ? '#fee2e2' : '#fef3c7',
-                            color: hist.status === 'Approved' ? '#16a34a' : hist.status === 'Rejected' ? '#dc2626' : '#d97706'
+                            backgroundColor: hist.status?.toLowerCase().includes('approved') ? '#dcfce7' : hist.status === 'Rejected' ? '#fee2e2' : '#fef3c7',
+                            color: hist.status?.toLowerCase().includes('approved') ? '#16a34a' : hist.status === 'Rejected' ? '#dc2626' : '#d97706'
                           }}>
-                            {hist.status === 'Approved' ? tr('approved', 'Approved') : hist.status === 'Rejected' ? tr('rejected', 'Rejected') : hist.status === 'Pending' ? tr('pending', 'Pending') : hist.status}
+                            {getStatusLabel(hist.status)}
                           </span>
                         </td>
                       </tr>
