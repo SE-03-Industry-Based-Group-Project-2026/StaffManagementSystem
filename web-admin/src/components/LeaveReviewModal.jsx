@@ -17,7 +17,7 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
   const [employeeHistory, setEmployeeHistory] = useState([]);
   const [loadingData, setLoadingData] = useState(true);
   const [reviewYear, setReviewYear] = useState(String(new Date().getFullYear()));
-  const [hasSignature, setHasSignature] = useState(true); // 🌟 අත්සන ඇත්දැයි පරීක්ෂා කිරීමට ස්ටේට් එකක්
+  const [hasSignature, setHasSignature] = useState(true);
 
   const isLabourer = String(selected.users?.staff_category || '').toLowerCase() === 'labour' || 
                      String(selected.users?.designations?.designation_en || '').toLowerCase().includes('labour') ||
@@ -27,14 +27,12 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
   const isShortLeave = selected.leave_types?.name_en?.toLowerCase().includes('short');
   const employeeId = selected.user_id || selected.users?.id;
 
- 
   useEffect(() => {
     const checkUserSignature = async () => {
       const userStr = localStorage.getItem('user');
       if (userStr) {
         try {
           const parsedUser = JSON.parse(userStr);
-         
           const { data, error } = await supabase
             .from('users')
             .select('signature_url')
@@ -114,7 +112,6 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
   }, [employeeId, reviewYear]);
 
   const canApprove = () => {
-    // 🌟 අත්සනක් නොමැති නම් අනුමත කිරීමට ඉඩ නොදේ
     if (!hasSignature) return false;
 
     const status = selected.status;
@@ -165,7 +162,6 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
 
         <div className="modal-body" style={{ maxHeight: '80vh', overflowY: 'auto' }}>
           
-          {/* 🌟 අත්සන නොමැති නම් පෙන්වන අනතුරු ඇඟවීමේ පණිවිඩය */}
           {!hasSignature && (
             <div style={{ padding: '12px 16px', backgroundColor: '#fee2e2', color: '#dc2626', borderRadius: '8px', marginBottom: '16px', fontSize: '13px', fontWeight: '600' }}>
               ⚠️ {tr('signature_required_warning', 'You must save your digital signature in your profile before you can approve leave requests.')}
@@ -217,7 +213,7 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
                   className="select"
                   style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '6px', cursor: 'pointer' }}
                 >
-                  {[2024, 2025, 2026, 2027, 2028].map((yr) => (
+                  {[2024, 2025, 2026, 2027, 2028, 2029, 2030].map((yr) => (
                     <option key={yr} value={yr}>{yr}</option>
                   ))}
                 </select>
@@ -327,12 +323,36 @@ export default function LeaveReviewModal({ selected, setSelected, remark, setRem
             <h3 style={{ marginBottom: 16 }}>{tr('digital_approval_signatures','Digital Approval Signatures')}</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 18 }}>
               {isLabourer ? (
-                <SignatureCard title={tr('chairman', 'Chairman')} image={selected.chairman_signature} t={t} />
+                <SignatureCard 
+                  title={tr('chairman', 'Chairman')} 
+                  positionKey="chairman"
+                  image={selected.chairman_signature} 
+                  lang={lang} 
+                  t={t} 
+                />
               ) : (
                 <>
-                  <SignatureCard title={tr('subject_officer', 'Subject Officer')} image={selected.subject_signature} t={t} />
-                  <SignatureCard title={tr('cc_officer', 'CC Officer')} image={selected.cc_signature} t={t} />
-                  <SignatureCard title={tr('secretary', 'Secretary')} image={selected.secretary_signature} t={t} />
+                  <SignatureCard 
+                    title={tr('subject_officer', 'Subject Officer')} 
+                    positionKey="subject_officer"
+                    image={selected.subject_signature} 
+                    lang={lang} 
+                    t={t} 
+                  />
+                  <SignatureCard 
+                    title={tr('cc_officer', 'CC Officer')} 
+                    positionKey="cc_officer"
+                    image={selected.cc_signature} 
+                    lang={lang} 
+                    t={t} 
+                  />
+                  <SignatureCard 
+                    title={tr('secretary', 'Secretary')} 
+                    positionKey="secretary"
+                    image={selected.secretary_signature} 
+                    lang={lang} 
+                    t={t} 
+                  />
                 </>
               )}
             </div>

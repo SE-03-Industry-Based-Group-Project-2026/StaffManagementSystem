@@ -773,6 +773,26 @@
   "year": "වසර",
   "casual_used": "භාවිත කළ අනියම් නිවාඩු",
   "medical_used": "භාවිත කළ විවේකි/අසනීප නිවාඩු",
-  "short_used": "භාවිත කළ කෙටි නිවාඩු"
+  "short_used": "භාවිත කළ කෙටි නිවාඩු",
+  "change_password": "මුරපදය වෙනස් කරන්න",
+  "change_password_note": "ඔබගේ ගිණුමේ මුරපදය ආරක්ෂිතව යාවත්කාලීන කරන්න.",
+  "current_password": "දැන් ඇති මුරපදය",
+  "new_password": "නව මුරපදය",
+  "update_password": "මුරපදය යාවත්කාලීන කරන්න",
+  "updating": "යාවත්කාලීන වෙමින් පවතී...",
+  "show_password": "මුරපදය පෙන්වන්න",
+  "hide_password": "මුරපදය සඟවන්න",
+  "fill_all_passfields": "කරුණාකර වත්මන් සහ නව මුරපද දෙකම ඇතුළත් කරන්න",
+  "password_must_be_different": "නව මුරපදය වත්මන් මුරපදයට වඩා වෙනස් විය යුතුය",
+  "password_changed_success": "මුරපදය සාර්ථකව වෙනස් කරන ලදී",
+  "password_change_failed": "මුරපදය වෙනස් කිරීම අසාර්ථක විය",
+  "min_8_characters": "(අවම අක්ෂර 8 කි)",
+  "failed_to_load_roles": "භූමිකා පූරණය වීම අසාර්ථක විය",
+  "failed_to_load_privileges": "වරප්‍රසාද පූරණය වීම අසාර්ථක විය",
+  "failed_to_update_privileges": "වරප්‍රසාද යාවත්කාලීන කිරීම අසාර්ථක විය",
+  "failed_to_save_privileges": "වරප්‍රසාද සුරැකීම අසාර්ථක විය",
+  "please_select_role": "කරුණාකර භූමිකාවක් තෝරන්න.",
+  "system_privileges_title": "පද්ධති වරප්‍රසාද",
+  "privileges_count_label": "වරප්‍රසාද"
 
 }

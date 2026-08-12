@@ -772,5 +772,26 @@
   "leave_balance_chart": "விடுப்பு இருப்பு வரைபடம்",
   "no_leave_balances": "இந்த ஆண்டுக்கான விடுப்பு இருப்புகள் எதுவும் கிடைக்கவில்லை.",
   "my_leave_history": "எனது விடுப்பு வரலாறு",
-  "add_another_year": "+ மற்றொரு ஆண்டைச் சேர்"
+  "add_another_year": "+ மற்றொரு ஆண்டைச் சேர்",
+  "change_password": "கடவுச்சொல்லை மாற்று",
+  "change_password_note": "உங்கள் கணக்கு கடவுச்சொல்லைப் பாதுகாப்பாகப் புதுப்பிக்கவும்.",
+  "current_password": "தற்போதைய கடவுச்சொல்",
+  "new_password": "புதிய கடவுச்சொல்",
+  "update_password": "கடவுச்சொல்லைப் புதுப்பிக்கவும்",
+  "updating": "புதுப்பிக்கிறது...",
+  "show_password": "கடவுச்சொலைக் காட்டு",
+  "hide_password": "கடவுச்சொல்லை மறை",
+  "fill_all_passfields": "தற்போதைய மற்றும் புதிய கடவுச்சொற்கள் இரண்டையும் நிரப்பவும்",
+  "password_must_be_different": "புதிய கடவுச்சொல் தற்போதைய கடவுச்சொல்லிலிருந்து ভিন্নமாக இருக்க வேண்டும்",
+  "password_changed_success": "கடவுச்சொல் வெற்றிகரமாக மாற்றப்பட்டது",
+  "password_change_failed": "கடவுச்சொல்லை மாற்றுவதில் தோல்வி",
+  "min_8_characters": "(குறைந்தது 8 எழுத்துக்கள்)",
+
+  "failed_to_load_roles": "பங்குகளை ஏற்றுவதில் தோல்வி",
+  "failed_to_load_privileges": "அனுமதிகளை ஏற்றுவதில் தோல்வி",
+  "failed_to_update_privileges": "அனுமதிகளைப் புதுப்பிப்பதில் தோல்வி",
+  "failed_to_save_privileges": "அனுமதிகளைச் சேமிப்பதில் தோல்வி",
+  "please_select_role": "தயவுசெய்து ஒரு பங்கைத் தேர்ந்தெடுக்கவும்.",
+  "system_privileges_title": "கணினி அனுமதிகள்",
+  "privileges_count_label": "அனுமதிகள்"
 }

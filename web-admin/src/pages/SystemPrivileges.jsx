@@ -42,6 +42,12 @@ export default function SystemPrivileges() {
   const [expandedModules, setExpandedModules] = useState({});
   const [originalModules, setOriginalModules] = useState([]);
 
+  // Helper translation function for safe lookups
+  const tr = (key, fallback) => {
+    const val = t(key);
+    return val && val !== key ? val : fallback;
+  };
+
   const activeLanguage = String(
     language ||
       localStorage.getItem('language') ||
@@ -86,8 +92,9 @@ export default function SystemPrivileges() {
       }
     } catch (error) {
       console.error('Load roles error:', error);
-      setError(error.message || 'Failed to load roles');
-      showError(error.message || 'Failed to load roles');
+      const errMsg = error.message || tr('failed_to_load_roles', 'Failed to load roles');
+      setError(errMsg);
+      showError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -108,7 +115,7 @@ export default function SystemPrivileges() {
       const token = sessionData?.session?.access_token;
 
       if (!token) {
-        throw new Error('Login session expired. Please login again.');
+        throw new Error(tr('session_expired', 'Login session expired. Please login again.'));
       }
 
       const response = await fetch(`${API_BASE}/privileges/all?role_id=${roleId}`, {
@@ -122,7 +129,7 @@ export default function SystemPrivileges() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to load privileges');
+        throw new Error(result.error || tr('failed_to_load_privileges', 'Failed to load privileges'));
       }
 
       const loadedModules = result.modules || [];
@@ -145,10 +152,11 @@ export default function SystemPrivileges() {
       setExpandedModules(initialExpanded);
     } catch (error) {
       console.error('Load privileges error:', error);
-      setError(error.message || 'Failed to load privileges');
+      const errMsg = error.message || tr('failed_to_load_privileges', 'Failed to load privileges');
+      setError(errMsg);
       setModules([]);
       setOriginalModules([]);
-      showError(error.message || 'Failed to load privileges');
+      showError(errMsg);
     } finally {
       setLoading(false);
     }
@@ -279,12 +287,12 @@ export default function SystemPrivileges() {
 
   const savePrivileges = async () => {
     if (!selectedRole) {
-      showError(isSinhala ? 'කරුණාකර භූමිකාවක් තෝරන්න.' : isTamil ? 'தயவுசெய்து ஒரு பங்கைத் தேர்ந்தெடுக்கவும்.' : 'Please select a role.');
+      showError(tr('please_select_role', 'Please select a role.'));
       return;
     }
 
     if (!hasChanges) {
-      showSuccess(isSinhala ? 'සුරැකීමට වෙනස්කම් නොමැත.' : isTamil ? 'சேமிக்க மாற்றங்கள் இல்லை.' : 'No changes to save.');
+      showSuccess(tr('no_changes_to_save', 'No changes to save.'));
       return;
     }
 
@@ -293,7 +301,7 @@ export default function SystemPrivileges() {
       const { data: { session } } = await supabase.auth.getSession();
 
       if (!session?.access_token) {
-        throw new Error('Your login session has expired. Please login again.');
+        throw new Error(tr('session_expired', 'Your login session has expired. Please login again.'));
       }
 
       const privileges = modules.flatMap((module) =>
@@ -318,14 +326,14 @@ export default function SystemPrivileges() {
       const result = await response.json();
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to update privileges');
+        throw new Error(result.error || tr('failed_to_update_privileges', 'Failed to update privileges'));
       }
 
       setOriginalModules(JSON.parse(JSON.stringify(modules)));
-      showSuccess(t('privileges_updated_successfully') !== 'privileges_updated_successfully' ? t('privileges_updated_successfully') : 'Privileges updated successfully.');
+      showSuccess(tr('privileges_updated_successfully', 'Privileges updated successfully.'));
     } catch (error) {
       console.error('Save privileges error:', error);
-      showError(error.message || 'Failed to save privileges');
+      showError(error.message || tr('failed_to_save_privileges', 'Failed to save privileges'));
     } finally {
       setSaving(false);
     }
@@ -333,7 +341,7 @@ export default function SystemPrivileges() {
 
   const resetChanges = () => {
     setModules(JSON.parse(JSON.stringify(originalModules)));
-    showSuccess(isSinhala ? 'වෙනස්කම් ඉවතලන ලදී.' : isTamil ? 'மாற்றங்கள் தவிர்க்கப்பட்டன.' : 'Changes discarded.');
+    showSuccess(tr('changes_discarded', 'Changes discarded.'));
   };
 
   const currentSelectedRoleObj = roles.find(
@@ -348,7 +356,7 @@ export default function SystemPrivileges() {
           <div style={styles.loadingBox}>
             <div style={styles.spinner} />
             <div>
-              {isSinhala ? 'පද්ධති වරප්‍රසාද පූරණය වෙමින් පවතී...' : isTamil ? 'கணினி அனுமதிகள் ஏற்றப்படுகின்றன...' : 'Loading system privileges...'}
+              {tr('loading_system_privileges', 'Loading system privileges...')}
             </div>
           </div>
         </div>
@@ -367,16 +375,16 @@ export default function SystemPrivileges() {
             </div>
             <div>
               <h1 style={styles.title}>
-                {isSinhala ? 'පද්ධති වරප්‍රසාද' : isTamil ? 'கணினி அனுமதிகள்' : 'System Privileges'}
+                {tr('system_privileges_title', 'System Privileges')}
               </h1>
               <p style={styles.subtitle}>
-                {isSinhala ? 'භූමිකා පාදක ප්‍රවේශ අවසර කළමනාකරණය කරන්න.' : isTamil ? 'பங்கு அடிப்படையிலான அணுகல் அனுமதிகளை நிர்வகிக்கவும்.' : 'Manage role-based access permissions.'}
+                {tr('system_privileges_subtitle', 'Manage role-based access permissions.')}
               </p>
             </div>
           </div>
 
           <div style={styles.headerRight}>
-            <span style={styles.roleLabel}>{isSinhala ? 'භූමිකාව' : isTamil ? 'பங்கு' : 'Role'}</span>
+            <span style={styles.roleLabel}>{tr('role', 'Role')}</span>
             <select
               value={selectedRole}
               onChange={(e) => setSelectedRole(e.target.value)}
@@ -402,7 +410,7 @@ export default function SystemPrivileges() {
         <div style={styles.roleInfo}>
           <div>
             <span style={styles.roleInfoLabel}>
-              {isSinhala ? 'සඳහා වරප්‍රසාද සංස්කරණය කරමින් පවතී:' : isTamil ? 'இதற்கான அனுமதிகள் திருத்தப்படுகின்றன:' : 'Editing privileges for'}
+              {tr('editing_privileges_for', 'Editing privileges for')}
             </span>
             <h2 style={styles.roleName}>{selectedRoleDisplayName}</h2>
           </div>
@@ -414,17 +422,17 @@ export default function SystemPrivileges() {
             }}
           >
             {hasChanges 
-              ? (isSinhala ? 'සුරකින නොලද වෙනස්කම්' : isTamil ? 'சேமிக்கப்படாத மாற்றங்கள்' : 'Unsaved changes') 
-              : (isSinhala ? 'සියලු වෙනස්කම් සුරකින ලදී' : isTamil ? 'அனைத்து மாற்றங்களும் சேமிக்கப்பட்டன' : 'All changes saved')}
+              ? tr('unsaved_changes', 'Unsaved changes') 
+              : tr('all_changes_saved', 'All changes saved')}
           </div>
         </div>
 
         {/* STATS */}
         <div style={styles.stats}>
-          <StatCard label={isSinhala ? 'මුළු වරප්‍රසාද' : isTamil ? 'மொத்த அனுமதிகள்' : 'Total Privileges'} value={statistics.total} icon="shield" />
-          <StatCard label={isSinhala ? 'සක්‍රීයයි' : isTamil ? 'செயலில்' : 'Enabled'} value={statistics.enabled} icon="check-circle" />
-          <StatCard label={isSinhala ? 'අක්‍රීයයි' : isTamil ? 'முடக்கம்' : 'Disabled'} value={statistics.disabled} icon="x-circle" />
-          <StatCard label={isSinhala ? 'මොඩියුල' : isTamil ? 'தொகுதிகள்' : 'Modules'} value={statistics.moduleCount} icon="grid" />
+          <StatCard label={tr('total_privileges', 'Total Privileges')} value={statistics.total} icon="shield" />
+          <StatCard label={tr('enabled', 'Enabled')} value={statistics.enabled} icon="check-circle" />
+          <StatCard label={tr('disabled', 'Disabled')} value={statistics.disabled} icon="x-circle" />
+          <StatCard label={tr('modules', 'Modules')} value={statistics.moduleCount} icon="grid" />
         </div>
 
         {/* TOOLBAR */}
@@ -435,20 +443,20 @@ export default function SystemPrivileges() {
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder={isSinhala ? 'වරප්‍රසාද සොයන්න...' : isTamil ? 'அனுமதிகளைத் தேடவும்...' : 'Search privileges...'}
+              placeholder={tr('search_privileges_placeholder', 'Search privileges...')}
               style={styles.searchInput}
             />
           </div>
 
           <div style={styles.toolbarRight}>
             <span style={styles.resultText}>
-              {statistics.total} {isSinhala ? 'වරප්‍රසාද' : isTamil ? 'அனுமதிகள்' : 'privileges'}
+              {statistics.total} {tr('privileges_count_label', 'privileges')}
             </span>
             <button type="button" onClick={expandAll} style={styles.softButton}>
-              {isSinhala ? 'සියල්ල විවෘත කරන්න' : isTamil ? 'அனைத்தையும் விரிவுபடுத்து' : 'Expand All'}
+              {tr('expand_all', 'Expand All')}
             </button>
             <button type="button" onClick={collapseAll} style={styles.softButton}>
-              {isSinhala ? 'සියල්ල හකුළන්න' : isTamil ? 'அனைத்தையும் சுருக்கு' : 'Collapse All'}
+              {tr('collapse_all', 'Collapse All')}
             </button>
           </div>
         </div>
@@ -458,7 +466,7 @@ export default function SystemPrivileges() {
           {filteredModules.length === 0 ? (
             <div style={styles.empty}>
               <AppIcon name="search" size={40} />
-              <h3>{isSinhala ? 'වරප්‍රසාද හමු නොවීය' : isTamil ? 'அனுமதிகள் எதுவும் கிடைக்கவில்லை' : 'No privileges found'}</h3>
+              <h3>{tr('no_privileges_found', 'No privileges found')}</h3>
             </div>
           ) : (
             filteredModules.map((module) => {
@@ -481,7 +489,7 @@ export default function SystemPrivileges() {
                       <div style={styles.moduleInfo}>
                         <div style={styles.moduleTitle}>{getModuleName(module)}</div>
                         <div style={styles.moduleKey}>
-                          {privilegeCount} {isSinhala ? 'වරප්‍රසාද' : isTamil ? 'அனுமதிகள்' : 'privileges'}
+                          {privilegeCount} {tr('privileges_count_label', 'privileges')}
                         </div>
                       </div>
                       <AppIcon name={isExpanded ? 'chevron-down' : 'chevron-right'} size={20} />
@@ -497,8 +505,8 @@ export default function SystemPrivileges() {
                     >
                       <span style={styles.moduleToggleDot} />
                       {moduleEnabled 
-                        ? (isSinhala ? 'සියල්ල සක්‍රීයයි' : isTamil ? 'அனைத்தும் ஆன்' : 'All ON') 
-                        : (isSinhala ? 'සියල්ල සක්‍රීය කරන්න' : isTamil ? 'அனைத்தையும் இயக்கு' : 'Enable All')}
+                        ? tr('all_on', 'All ON') 
+                        : tr('enable_all', 'Enable All')}
                     </button>
                   </div>
 
@@ -506,10 +514,10 @@ export default function SystemPrivileges() {
                     <div style={styles.privilegeTable}>
                       <div style={styles.privilegeHeader}>
                         <div style={styles.privilegeNameHeader}>
-                          {isSinhala ? 'වරප්‍රසාදය' : isTamil ? 'அனுமதி' : 'Privilege'}
+                          {tr('privilege', 'Privilege')}
                         </div>
                         <div>
-                          {isSinhala ? 'තත්ත්වය' : isTamil ? 'நிலை' : 'Status'}
+                          {tr('status', 'Status')}
                         </div>
                       </div>
 
@@ -533,8 +541,8 @@ export default function SystemPrivileges() {
                               }}
                             >
                               {privilege.is_enabled 
-                                ? (isSinhala ? 'සක්‍රීයයි' : isTamil ? 'செயலில்' : 'Enabled') 
-                                : (isSinhala ? 'අක්‍රීයයි' : isTamil ? 'முடக்கம்' : 'Disabled')}
+                                ? tr('enabled', 'Enabled') 
+                                : tr('disabled', 'Disabled')}
                             </span>
                           </div>
                         </div>
@@ -552,14 +560,14 @@ export default function SystemPrivileges() {
           <div>
             <strong>
               {hasChanges 
-                ? (isSinhala ? 'සුරකින නොලද වෙනස්කම් ඇත' : isTamil ? 'சேமிக்கப்படாத மாற்றங்கள் உள்ளன' : 'You have unsaved changes') 
-                : (isSinhala ? 'වරප්‍රසාද යාවත්කාලීනව ඇත' : isTamil ? 'அனுமதிகள் புதுப்பிக்கப்பட்டுள்ளன' : 'Privileges are up to date')}
+                ? tr('you_have_unsaved_changes', 'You have unsaved changes') 
+                : tr('privileges_up_to_date', 'Privileges are up to date')}
             </strong>
           </div>
           <div style={styles.saveActions}>
             {hasChanges && (
               <button type="button" onClick={resetChanges} disabled={saving} style={styles.cancelButton}>
-                {isSinhala ? 'අවලංගු කරන්න' : isTamil ? 'மாற்றங்களைத் தவிர்' : 'Discard Changes'}
+                {tr('discard_changes', 'Discard Changes')}
               </button>
             )}
             <button
@@ -570,8 +578,8 @@ export default function SystemPrivileges() {
             >
               <AppIcon name="save" size={18} />
               {saving 
-                ? (isSinhala ? 'සුරකිමින්...' : isTamil ? 'சேமிக்கிறது...' : 'Saving...') 
-                : (isSinhala ? 'වරප්‍රසාද සුරකින්න' : isTamil ? 'அனுமதிகளைச் சேமி' : 'Save Privileges')}
+                ? tr('saving', 'Saving...') 
+                : tr('save_privileges', 'Save Privileges')}
             </button>
           </div>
         </div>

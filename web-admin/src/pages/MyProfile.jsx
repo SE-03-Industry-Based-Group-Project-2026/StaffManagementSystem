@@ -20,6 +20,15 @@ function MyProfile() {
   const [saving, setSaving] = useState(false);
   const [showAvatarModal, setShowAvatarModal] = useState(false);
 
+  // States for Change Password form and Eye Icon toggles
+  const [passwordData, setPasswordData] = useState({
+    current_password: '',
+    new_password: ''
+  });
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+
   const tr = (key, fallback) => {
     const value = t(key);
     return value && value !== key ? value : fallback;
@@ -62,6 +71,7 @@ function MyProfile() {
     loadProfile();
   }, []);
 
+  // Load current user profile details
   const loadProfile = async () => {
     try {
       setLoading(true);
@@ -179,6 +189,7 @@ function MyProfile() {
     });
   };
 
+  // Save digital signature
   const saveSignature = async () => {
     if (!profile?.id) {
       showError(tr('profile_not_found', 'Profile not found'));
@@ -234,7 +245,6 @@ function MyProfile() {
         throw new Error('Signature URL could not be generated');
       }
 
-      // 🌟 Backend API call (Protected by profile_edit privilege)
       const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE}/profile/update`, {
         method: 'PUT',
@@ -281,6 +291,51 @@ function MyProfile() {
     }
   };
 
+  // Handle password update submission
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+
+    if (!passwordData.current_password || !passwordData.new_password) {
+      showError(tr('fill_all_passfields', 'Please fill in both current and new passwords'));
+      return;
+    }
+
+    if (passwordData.new_password.length < 8) {
+      showError(tr('password_min_length', 'New password must contain at least 8 characters'));
+      return;
+    }
+
+    if (passwordData.current_password === passwordData.new_password) {
+      showError(tr('password_must_be_different', 'New password must be different from current password'));
+      return;
+    }
+
+    try {
+      setChangingPassword(true);
+      const headers = await getAuthHeaders();
+
+      const response = await fetch(`${API_BASE}/auth/change-password`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(passwordData)
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to change password');
+      }
+
+      showSuccess(tr('password_changed_success', 'Password changed successfully'));
+      setPasswordData({ current_password: '', new_password: '' });
+    } catch (error) {
+      console.error('Change password error:', error);
+      showError(error.message || tr('password_change_failed', 'Failed to change password'));
+    } finally {
+      setChangingPassword(false);
+    }
+  };
+
   const handlePhotoUpload = async (event) => {
     try {
       const file = event.target.files?.[0];
@@ -317,7 +372,6 @@ function MyProfile() {
 
       const avatarUrl = data.publicUrl;
 
-      // 🌟 Backend API call (Protected by profile_edit privilege)
       const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE}/profile/update`, {
         method: 'PUT',
@@ -346,7 +400,6 @@ function MyProfile() {
       };
 
       localStorage.setItem('user', JSON.stringify(updatedUserData));
-      
       window.dispatchEvent(new Event('userUpdated'));
 
       showSuccess(tr('photo_update_success', 'Profile photo updated successfully.'));
@@ -528,6 +581,7 @@ function MyProfile() {
             background: '#fff',
             borderRadius: 16,
             padding: 24,
+            marginBottom: 24,
             boxShadow: '0 2px 10px rgba(0, 0, 0, 0.04)',
             border: '1px solid #eaecf0',
             boxSizing: 'border-box'
@@ -685,6 +739,171 @@ function MyProfile() {
                 : tr('save_signature', 'Save Signature')}
             </button>
           </div>
+        </div>
+
+        {/* Change Password Card with Eye Icon Toggle */}
+        <div
+          style={{
+            width: '100%',
+            background: '#fff',
+            borderRadius: 16,
+            padding: 24,
+            marginBottom: 24,
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.04)',
+            border: '1px solid #eaecf0',
+            boxSizing: 'border-box',
+            maxWidth: 648
+          }}
+        >
+          <div
+            style={{
+              marginBottom: 16,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 12,
+              paddingBottom: 14,
+              borderBottom: '1px solid #f1f5f9'
+            }}
+          >
+            <div
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 10,
+                background: '#fef2f2',
+                color: '#8B0000',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                flexShrink: 0
+              }}
+            >
+              <AppIcon name="shield" size={20} />
+            </div>
+
+            <div>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: '#0f172a' }}>
+                {tr('change_password', 'Change Password')}
+              </h3>
+              <p style={{ margin: '2px 0 0', color: '#64748b', fontSize: 13 }}>
+                {tr('change_password_note', 'Update your account password securely.')}
+              </p>
+            </div>
+          </div>
+
+          <form onSubmit={handlePasswordChange} style={{ display: 'grid', gap: 16 }}>
+            
+            {/* Current Password Field with Eye Icon */}
+            <div className="field">
+              <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13, color: '#334155' }}>
+                {tr('current_password', 'Current Password')} *
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type={showCurrentPassword ? "text" : "password"}
+                  className="input"
+                  value={passwordData.current_password}
+                  onChange={(e) => setPasswordData({ ...passwordData, current_password: e.target.value })}
+                  placeholder="••••••••"
+                  required
+                  style={{ width: '100%', padding: '10px 40px 10px 12px', borderRadius: 8, border: '1px solid #cbd5e1' }}
+                />
+                <span
+                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: '12px',
+                    cursor: 'pointer',
+                    color: '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    userSelect: 'none'
+                  }}
+                  title={showCurrentPassword ? tr('hide_password', 'Hide password') : tr('show_password', 'Show password')}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    {showCurrentPassword ? (
+                      <>
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                      </>
+                    ) : (
+                      <>
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </>
+                    )}
+                  </svg>
+                </span>
+              </div>
+            </div>
+
+            {/* New Password Field with Eye Icon */}
+            <div className="field">
+              <label style={{ display: 'block', marginBottom: 6, fontWeight: 600, fontSize: 13, color: '#334155' }}>
+                {tr('new_password', 'New Password')} *
+              </label>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <input
+                  type={showNewPassword ? "text" : "password"}
+                  className="input"
+                  value={passwordData.new_password}
+                  onChange={(e) => setPasswordData({ ...passwordData, new_password: e.target.value })}
+                  placeholder={`•••••••• ${tr('min_8_characters', '(min 8 characters)')}`}
+                  required
+                  style={{ width: '100%', padding: '10px 40px 10px 12px', borderRadius: 8, border: '1px solid #cbd5e1' }}
+                />
+                <span
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  style={{
+                    position: 'absolute',
+                    right: '12px',
+                    cursor: 'pointer',
+                    color: '#64748b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    userSelect: 'none'
+                  }}
+                  title={showNewPassword ? tr('hide_password', 'Hide password') : tr('show_password', 'Show password')}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    {showNewPassword ? (
+                      <>
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                      </>
+                    ) : (
+                      <>
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </>
+                    )}
+                  </svg>
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={changingPassword}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '9px 18px',
+                  fontSize: 13,
+                  marginTop: 4
+                }}
+              >
+                <AppIcon name="check" size={15} />
+                {changingPassword
+                  ? tr('updating', 'Updating...')
+                  : tr('update_password', 'Update Password')}
+              </button>
+            </div>
+          </form>
         </div>
 
       </div>

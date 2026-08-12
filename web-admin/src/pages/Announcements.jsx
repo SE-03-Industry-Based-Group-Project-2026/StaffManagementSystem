@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../services/supabase';
 import { useLanguage } from '../context/LanguageContext';
@@ -235,6 +235,7 @@ function Announcements() {
     resetForm();
   };
 
+  // 🌟 ශ්‍රී ලංකා වෙලාව නිවැරදිව මැප් කර යවන ලදි
   const sendAnnouncement = async (e) => {
     e.preventDefault();
 
@@ -245,11 +246,18 @@ function Announcements() {
 
     setSending(true);
 
+    // If expires_at is given as local datetime-local, convert or format nicely
+    let formattedExpiresAt = formData.expires_at || null;
+    if (formattedExpiresAt && !formattedExpiresAt.endsWith('Z') && !formattedExpiresAt.includes('+')) {
+      // Ensure it's treated as ISO string for backend
+      formattedExpiresAt = new Date(formData.expires_at).toISOString();
+    }
+
     const payload = {
       title: formData.title.trim(),
       message: formData.message.trim(),
-      department_id: formData.department_id || null,
-      expires_at: formData.expires_at || null,
+      department_id: formData.department_id ? Number(formData.department_id) : null,
+      expires_at: formattedExpiresAt,
       priority: formData.priority || 'Medium'
     };
 
@@ -334,11 +342,13 @@ function Announcements() {
     return tr('low', 'Low');
   };
 
-  
   if (loading) {
     return (
       <Layout>
-        <div style={styles.loading}><div className="spinner-icon" />{t('loading')}</div>
+        <div style={styles.loadingBox}>
+          <div style={styles.spinner} />
+          <div>{t('loading')}</div>
+        </div>
       </Layout>
     );
   }
@@ -401,7 +411,6 @@ function Announcements() {
               filteredAnnouncements.map((ann) => {
                 const priorityStyle = getPriorityStyle(ann.priority || 'Medium');
                 
-              
                 const displayTitle = isSinhala
                   ? (ann.title_si || ann.title_en || ann.title)
                   : isTamil
@@ -632,7 +641,6 @@ function Announcements() {
 
                   <div style={styles.modalActions}>
                     <button type="button" onClick={closeModal} style={styles.secondaryBtn}>{t('cancel')}</button>
-                  <div className="spinner-icon" /><span>{t('logging_in') || 'Logging in...'}</span>
                     <button type="submit" disabled={sending} style={styles.primaryBtn}>
                       {sending ? t('loading') : isEditing ? t('update') : t('add')}
                     </button>
@@ -946,31 +954,17 @@ const styles = {
     backgroundColor: 'var(--gray-50)'
   },
   modalActions: { display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 },
-  loading: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: '100vh',
-    fontSize: 16,
-    color: 'var(--muted)'
-  },
-
-  loading: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    height: '100vh',
-    backgroundColor: 'var(--bg-primary)'
-  },
   loadingBox: {
     display: 'flex',
     alignItems: 'center',
+    justifyContent: 'center',
+    height: '100vh',
     gap: 12,
     color: 'var(--muted)',
     fontSize: 14,
-    fontWeight: 600
+    fontWeight: 600,
+    backgroundColor: 'var(--bg-primary)'
   },
-
   spinner: {
     width: 20,
     height: 20,
