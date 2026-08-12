@@ -1,4 +1,4 @@
-const { GoogleGenAI } = require('@google/genai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const API_KEY = process.env.GEMINI_API_KEY;
 
@@ -8,11 +8,7 @@ if (!API_KEY) {
   );
 }
 
-const ai = API_KEY
-  ? new GoogleGenAI({
-      apiKey: API_KEY
-    })
-  : null;
+const genAI = API_KEY ? new GoogleGenerativeAI(API_KEY) : null;
 
 const MODEL =
   process.env.GEMINI_MODEL ||
@@ -22,7 +18,6 @@ const sleep = (milliseconds) =>
   new Promise((resolve) =>
     setTimeout(resolve, milliseconds)
   );
-
 
 function extractJson(text) {
   const cleaned = String(text || '')
@@ -83,7 +78,6 @@ function normalizeTranslation(parsed, originalText) {
   };
 }
 
-
 async function translateToAllLanguages(text) {
   const cleanText = String(text || '').trim();
 
@@ -95,7 +89,7 @@ async function translateToAllLanguages(text) {
     };
   }
 
-  if (!ai) {
+  if (!genAI) {
     return createFallback(cleanText);
   }
 
@@ -128,19 +122,17 @@ ${cleanText}
     attempt += 1
   ) {
     try {
-      const response =
-        await ai.models.generateContent({
-          model: MODEL,
-          contents: prompt,
-          config: {
-            responseMimeType:
-              'application/json',
-            temperature: 0
-          }
-        });
+      const model = genAI.getGenerativeModel({
+        model: MODEL,
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0
+        }
+      });
 
-      const responseText =
-        response?.text || '';
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const responseText = response.text() || '';
 
       if (!responseText.trim()) {
         throw new Error(
