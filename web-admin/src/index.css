@@ -1,0 +1,104 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* ==========================================================
+   GLOBAL RESPONSIVE STYLES FOR ENTIRE SYSTEM
+   ========================================================== */
+
+/* 1. Universal Box-Sizing & Overflow Fix */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  max-width: 100vw;
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+/* 2. Responsive Tables (Prevent horizontal breaking) */
+table {
+  width: 100% !important;
+  max-width: 100% !important;
+  border-collapse: collapse;
+}
+
+.table-responsive, div:has(> table) {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 3. Responsive Modals */
+.modal, .modal-content, div[role="dialog"] {
+  width: 92% !important;
+  max-width: 650px !important;
+  max-height: 85vh !important;
+  overflow-y: auto !important;
+  padding: clamp(16px, 3vw, 24px) !important;
+  box-sizing: border-box !important;
+  margin: auto !important;
+}
+
+.modal-backdrop {
+  padding: 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* 4. Responsive Form Inputs & Elements */
+input, select, textarea {
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* 5. Fluid Typography & Spacing for Small Screens */
+@media screen and (max-width: 768px) {
+  body {
+    font-size: 14px;
+  }
+
+  /* Reduce large headings globally on mobile */
+  h1 { font-size: 22px !important; }
+  h2 { font-size: 19px !important; }
+  h3 { font-size: 17px !important; }
+
+  /* Stack flex containers automatically on mobile */
+  .pro-grid, .flex-responsive, .header-container {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+
+  /* Make buttons easier to tap on mobile */
+  button, .btn {
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+  }
+}
+
+/* 6. Extra Small Devices (Phones under 480px) */
+@media screen and (max-width: 480px) {
+  .modal {
+    width: 98% !important;
+    padding: 12px !important;
+  }
+  
+  /* Stack table cells or make them wrap if needed */
+  th, td {
+    padding: 8px 6px !important;
+    font-size: 12px !important;
+  }
+}
