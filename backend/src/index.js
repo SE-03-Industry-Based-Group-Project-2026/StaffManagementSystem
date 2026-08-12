@@ -7,11 +7,12 @@ const PORT = process.env.PORT || 5000;
 
 // Middleware - CORS properly configured once
 app.use(cors({
-    origin: 'http://localhost:3000',
+    origin: [
+        'http://localhost:3000',
+        'https://pradeshiyasabhastaffmanagementsystem.netlify.app'
+    ],
     credentials: true
 }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 // Import routes
 const authRoutes = require('./routes/auth');
