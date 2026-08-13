@@ -206,6 +206,49 @@ router.post(
         });
       }
 
+      // 🔔 Chairman, Secretary, Admin, CC/Subject Officers හැර අනෙක් සේවකයින්ට පමණක් නොටිෆිකේෂන් යැවීම
+      try {
+        const { data: activeUsers } = await supabase
+          .from('users')
+          .select(`
+            id,
+            roles(role_name)
+          `)
+          .eq('is_active', true);
+
+        if (activeUsers && activeUsers.length > 0) {
+          const excludedRoles = ['Admin', 'Secretary', 'Chairman', 'CC Officer', 'Subject Officer'];
+
+          const targetUsers = activeUsers.filter(u => {
+            const roleName = u.roles?.role_name;
+            return !excludedRoles.includes(roleName);
+          });
+
+          if (targetUsers.length > 0) {
+            const notificationPromises = targetUsers.map((u) =>
+              createNotification({
+                userId: u.id,
+                notificationKey: 'announcement_created',
+                title: 'New Announcement',
+                message: `New notice posted: "${translatedTitle.en}"`,
+                payload: {
+                  announcement_title: translatedTitle.en,
+                  announcement_id: data.id
+                },
+                notificationType: 'Announcement',
+                relatedEntity: 'announcements',
+                relatedId: data.id,
+                createdBy: currentUser.id
+              })
+            );
+
+            await Promise.all(notificationPromises);
+          }
+        }
+      } catch (notifErr) {
+        console.error('Failed to send announcement notifications:', notifErr);
+      }
+
       await logAudit(
         currentUser.id,
         'ANNOUNCEMENT_CREATED',

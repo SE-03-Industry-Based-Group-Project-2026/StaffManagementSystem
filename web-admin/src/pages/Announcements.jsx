@@ -235,7 +235,7 @@ function Announcements() {
     resetForm();
   };
 
-  // 🌟 ශ්‍රී ලංකා වෙලාව නිවැරදිව මැප් කර යවන ලදි
+  
   const sendAnnouncement = async (e) => {
     e.preventDefault();
 
