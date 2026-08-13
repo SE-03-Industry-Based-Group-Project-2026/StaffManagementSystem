@@ -802,5 +802,7 @@
   "photo_remove_failed": "புகைப்படத்தை அகற்றுவதில் தோல்வி",
   "signature_remove_failed": "கையொப்பத்தை அகற்றுவதில் தோல்வி",
   "audit_update_profile": "சுயவிவரம் புதுப்பிக்கப்பட்டது",
-  "leave":"விடுப்பு"
+  "leave":"விடுப்பு",
+  "all_department_members": "அனைத்து துறை உறுப்பினர்களும் (துறை பணி)",
+  "audit_assign_task_multiple": "பல ஊழியர்களுக்கு பணி ஒதுக்கப்பட்டது"
 }

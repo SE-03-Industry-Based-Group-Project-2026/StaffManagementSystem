@@ -803,5 +803,7 @@
   "photo_remove_failed": "Failed to remove photo",
   "signature_remove_failed": "Failed to remove signature",
   "audit_update_profile": "Profile Updated",
-  "leave":"Leave"
+  "leave":"Leave",
+  "all_department_members": "All Department Members (Department Task)",
+  "audit_assign_task_multiple": "Assigned task to multiple staff"
 }

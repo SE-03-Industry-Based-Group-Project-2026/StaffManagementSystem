@@ -621,7 +621,7 @@
   "new": "අලුත්",
   "created_by": "විසින් සාදන ලදී",
   "updated_by": "විසින් යාවත්කාලීන කරන ලදී",
-  "performed_by": "විසින් සිදු කරන ලදී",
+  "performed_by": "කරන ලද්දේ",
   "pending_profile_requests": "විභාග වන පැතිකඩ ඉල්ලීම්",
   "recent_system_activity": "මෑත පද්ධති ක්‍රියාකාරකම්",
   "manage_staff": "කාර්ය මණ්ඩලය කළමනාකරණය කරන්න",
@@ -802,5 +802,7 @@
   "photo_remove_failed": "ඡායාරූපය ඉවත් කිරීම අසමත් විය",
   "signature_remove_failed": "අත්සන ඉවත් කිරීම අසමත් විය",
   "audit_update_profile": "පැතිකඩ යාවත්කාලීන කරන ලදී",
-  "leave":"නිවාඩු"
+  "leave":"නිවාඩු",
+  "all_department_members": "සියලුම දෙපාර්තමේන්තු සාමාජිකයින්ට (දෙපාර්තමේන්තු කාර්යය)",
+  "audit_assign_task_multiple": "කාර්ය මණ්ඩලයේ කිහිප දෙනෙකුට කාර්යය පවරන ලදී"
 }
