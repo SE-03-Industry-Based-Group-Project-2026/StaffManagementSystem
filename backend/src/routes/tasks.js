@@ -100,9 +100,9 @@ router.post(
       const cleanTitle = String(title || '').trim();
       const cleanDescription = String(description || '').trim();
 
-      if (!cleanTitle || !assigned_to || !department_id || !due_date) {
+      if (!cleanTitle || !department_id || !due_date) {
         return res.status(400).json({
-          error: 'Title, assigned staff, department and due date are required'
+          error: 'Title, department and due date are required'
         });
       }
 
@@ -118,20 +118,52 @@ router.post(
         return res.status(400).json({ error: 'Due date cannot be in the past' });
       }
 
-      const [assigner, assignee, department] = await Promise.all([
+      const [assigner, department] = await Promise.all([
         getCurrentUser(req.user.id),
-        getUserById(assigned_to),
         getDepartmentById(department_id)
       ]);
 
       if (!assigner) return res.status(404).json({ error: 'Assigner not found' });
-      if (!assignee) return res.status(404).json({ error: 'Assigned staff not found' });
       if (!department) return res.status(404).json({ error: 'Department not found' });
 
-      if (!canAssignTask(assigner, assignee, department)) {
-        return res.status(403).json({
-          error: 'You are not allowed to assign a task to this staff member or department'
-        });
+      let targetStaffList = [];
+
+    
+      if (assigned_to === 'all' || !assigned_to || (Array.isArray(assigned_to) && assigned_to.length === 0)) {
+        const { data: deptStaff } = await supabase
+          .from('users')
+          .select('id, full_name')
+          .eq('department_id', department.id)
+          .eq('is_active', true);
+
+        targetStaffList = deptStaff || [];
+      } 
+      
+      else if (Array.isArray(assigned_to)) {
+        const { data: specificStaff } = await supabase
+          .from('users')
+          .select('id, full_name')
+          .in('id', assigned_to)
+          .eq('department_id', department.id)
+          .eq('is_active', true);
+
+        targetStaffList = specificStaff || [];
+      } 
+    
+      else {
+        const { data: singleStaff } = await supabase
+          .from('users')
+          .select('id, full_name')
+          .eq('id', assigned_to)
+          .eq('department_id', department.id)
+          .eq('is_active', true)
+          .single();
+
+        if (singleStaff) targetStaffList = [singleStaff];
+      }
+
+      if (targetStaffList.length === 0) {
+        return res.status(400).json({ error: 'No valid active staff found to assign tasks.' });
       }
 
       const translatedTitle = await translateToAllLanguages(cleanTitle);
@@ -139,38 +171,36 @@ router.post(
         ? await translateToAllLanguages(cleanDescription)
         : { en: '', si: '', ta: '' };
 
-      const { data, error } = await supabase
+     
+      const tasksToInsert = targetStaffList.map(staffMember => ({
+        title: translatedTitle.en,
+        description: translatedDescription.en,
+        title_en: translatedTitle.en,
+        title_si: translatedTitle.si,
+        title_ta: translatedTitle.ta,
+        description_en: translatedDescription.en,
+        description_si: translatedDescription.si,
+        description_ta: translatedDescription.ta,
+        assigned_to: staffMember.id,
+        department_id: department.id,
+        due_date,
+        assigned_by: assigner.id,
+        status: 'Pending',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      }));
+
+      const { data: insertedTasks, error: insertError } = await supabase
         .from('tasks')
-        .insert([{
-          title: translatedTitle.en,
-          description: translatedDescription.en,
-          title_en: translatedTitle.en,
-          title_si: translatedTitle.si,
-          title_ta: translatedTitle.ta,
-          description_en: translatedDescription.en,
-          description_si: translatedDescription.si,
-          description_ta: translatedDescription.ta,
-          assigned_to: assignee.id,
-          department_id: department.id,
-          due_date,
-          assigned_by: assigner.id,
-          status: 'Pending',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }])
-        .select(`
-          *,
-          assigned_to_user:users!tasks_assigned_to_fkey(full_name, email),
-          assigned_by_user:users!tasks_assigned_by_fkey(full_name, email),
-          departments(department_name, department_name_si, department_name_ta, department_type)
-        `)
-        .single();
+        .insert(tasksToInsert)
+        .select(`*`);
 
-      if (error) return res.status(400).json({ error: error.message });
+      if (insertError) return res.status(400).json({ error: insertError.message });
 
-      await Promise.all([
+  
+      const notificationPromises = targetStaffList.map(staffMember => 
         createNotification({
-          userId: assignee.id,
+          userId: staffMember.id,
           notificationKey: 'task_assigned',
           payload: {
             assigned_by: assigner.full_name,
@@ -178,24 +208,29 @@ router.post(
           },
           notificationType: 'Task',
           relatedEntity: 'tasks',
-          relatedId: data.id,
+          relatedId: insertedTasks[0]?.id,
           createdBy: assigner.id
-        }),
+        })
+      );
+
+      await Promise.all([
+        ...notificationPromises,
         logAudit(
           assigner.id,
-          'ASSIGN_TASK',
-          'tasks',
-          data.id,
+          'ASSIGN_TASK_MULTIPLE',
+          'departments',
+          department.id,
           null, 
-          {
-            title: cleanTitle,
-            assigned_to: assignee.full_name,
-            due_date: due_date
-          }
+          { title: cleanTitle, assigned_count: targetStaffList.length, due_date }
         )
       ]);
 
-      return res.json({ success: true, message: 'Task assigned successfully', data });
+      return res.json({ 
+        success: true, 
+        message: `Task assigned successfully to ${targetStaffList.length} staff member(s)`, 
+        data: insertedTasks 
+      });
+
     } catch (err) {
       console.error('Assign task error:', err);
       return res.status(500).json({ error: err.message || 'Internal server error' });

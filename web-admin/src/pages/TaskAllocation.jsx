@@ -59,7 +59,7 @@ function TaskAllocation() {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    assigned_to: '',
+    assigned_to:[],
     department_id: '',
     due_date: ''
   });
@@ -570,33 +570,61 @@ function TaskAllocation() {
 
                   <div className="field">
                     <label>{t('staff') || 'Staff'}</label>
-                    <select
-                      className="select"
-                      required
-                      value={formData.assigned_to}
-                      onChange={(e) => setFormData({ ...formData, assigned_to: e.target.value })}
-                    >
-                      <option value="">{t('select_staff') || 'Select Staff'}</option>
-                      {staff
-                        .filter(
-                          (s) =>
-                            String(s.department_id) === String(formData.department_id)
-                        )
-                        .map((s) => {
-                          const desigObj = s.designations;
-                          const desigText = desigObj
-                            ? (isSinhala ? (desigObj.designation_si || desigObj.designation_en) : isTamil ? (desigObj.designation_ta || desigObj.designation_en) : desigObj.designation_en)
-                            : '';
+                    
+                  
+                    <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        id="select_all_staff"
+                        checked={formData.assigned_to === 'all'}
+                        onChange={(e) => {
+                          setFormData({
+                            ...formData,
+                            assigned_to: e.target.checked ? 'all' : []
+                          });
+                        }}
+                      />
+                      <label htmlFor="select_all_staff" style={{ cursor: 'pointer', fontWeight: 600 }}>
+                      {isSinhala ? 'සියලුම දෙපාර්තමේන්තු සාමාජිකයින්ට' : isTamil ? 'அனைத்து துறை உறுப்பினர்களுக்கும்' : 'All Department Members'}
+                      </label>
+                    </div>
 
-                          const formattedStaffName = formatNameWithPrefix(s.title, s.full_name);
+                    
+                    {formData.assigned_to !== 'all' && (
+                      <div style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid var(--border)', padding: '10px', borderRadius: '8px', display: 'grid', gap: '8px' }}>
+                        {staff
+                          .filter((s) => String(s.department_id) === String(formData.department_id))
+                          .map((s) => {
+                            const desigObj = s.designations;
+                            const desigText = desigObj
+                              ? (isSinhala ? (desigObj.designation_si || desigObj.designation_en) : isTamil ? (desigObj.designation_ta || desigObj.designation_en) : desigObj.designation_en)
+                              : '';
+                            const formattedStaffName = formatNameWithPrefix(s.title, s.full_name);
+                            const isChecked = Array.isArray(formData.assigned_to) && formData.assigned_to.includes(s.id);
 
-                          return (
-                            <option key={s.id} value={s.id}>
-                              {formattedStaffName} {desigText ? `(${desigText})` : ''}
-                            </option>
-                          );
-                        })}
-                    </select>
+                            return (
+                              <label key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: '14px' }}>
+                                <input
+                                  type="checkbox"
+                                  value={s.id}
+                                  checked={isChecked}
+                                  onChange={(e) => {
+                                    const currentSelected = Array.isArray(formData.assigned_to) ? [...formData.assigned_to] : [];
+                                    if (e.target.checked) {
+                                      currentSelected.push(s.id);
+                                    } else {
+                                      const index = currentSelected.indexOf(s.id);
+                                      if (index > -1) currentSelected.splice(index, 1);
+                                    }
+                                    setFormData({ ...formData, assigned_to: currentSelected });
+                                  }}
+                                />
+                                {formattedStaffName} {desigText ? `(${desigText})` : ''}
+                              </label>
+                            );
+                          })}
+                      </div>
+                    )}
                   </div>
 
                   <div className="field">
