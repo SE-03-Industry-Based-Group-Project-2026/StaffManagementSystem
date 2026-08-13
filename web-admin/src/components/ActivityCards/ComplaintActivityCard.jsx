@@ -1,16 +1,50 @@
 import React from "react";
 import AppIcon from "../AppIcon";
 
+
 function formatTimeAgo(dateString, t) {
   if (!dateString) return "";
   const date = new Date(dateString);
   const now = new Date();
   const diff = Math.floor((now - date) / 1000);
 
-  if (diff < 60) return t('just_now') || "Just now";
-  if (diff < 3600) return `${Math.floor(diff / 60)} ${t('min_ago') || 'min ago'}`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)} ${t('hr_ago') || 'hr ago'}`;
-  return `${Math.floor(diff / 86400)} ${t('day_ago') || 'day ago'}`;
+  
+  const currentLang = String(
+    localStorage.getItem('language') ||
+    localStorage.getItem('appLanguage') ||
+    document.documentElement.lang ||
+    'en'
+  ).toLowerCase();
+
+  const isSi = currentLang.startsWith('si');
+  const isTa = currentLang.startsWith('ta');
+
+  
+  const getTranslated = (key, fallback) => {
+    try {
+      if (typeof t === 'function') {
+        const val = t(key);
+        if (val && val !== key) return val;
+      }
+    } catch (e) {
+      // ignore
+    }
+    return fallback;
+  };
+
+  if (diff < 60) {
+    return isSi ? 'දැන් සුළු මොහොතකට පෙර' : isTa ? 'இப்போது' : getTranslated('just_now', 'Just now');
+  }
+  if (diff < 3600) {
+    const mins = Math.floor(diff / 60);
+    return isSi ? `මිනිත්තු ${mins}කට පෙර` : isTa ? `${mins} நிமிடங்களுக்கு முன்பு` : `${mins} ${getTranslated('min_ago', 'min ago')}`;
+  }
+  if (diff < 86400) {
+    const hrs = Math.floor(diff / 3600);
+    return isSi ? `පැය ${hrs}කට පෙර` : isTa ? `${hrs} மணி நேரத்திற்கு முன்பு` : `${hrs} ${getTranslated('hr_ago', 'hr ago')}`;
+  }
+  const days = Math.floor(diff / 86400);
+  return isSi ? `දින ${days}කට පෙර` : isTa ? `${days} நாட்களுக்கு முன்பு` : `${days} ${getTranslated('day_ago', 'day ago')}`;
 }
 
 export default function ComplaintActivityCard({ log, details, t }) {
