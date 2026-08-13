@@ -331,7 +331,7 @@ function Layout({ children }) {
             </div>
           )}
 
-          {isAdmin && (
+          {(isAdmin || isManagementRole) && (
             <button className={location.pathname === '/departments' ? 'active' : ''} onClick={() => navigate('/departments')} type="button">
               <AppIcon name="building" size={19} /><span>{tr('departments', 'Departments')}</span>
             </button>

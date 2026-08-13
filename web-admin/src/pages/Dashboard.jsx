@@ -170,7 +170,7 @@ function Dashboard() {
       pendingLeaves,
       approvedLeaves,
       rejectedLeaves,
-      departments,
+      departmentsCount,
       openComplaints,
       inProgressComplaints,
       resolvedComplaints,
@@ -186,7 +186,6 @@ function Dashboard() {
       countRows('leave_requests', [{ type: 'eq', column: 'status', value: 'Pending' }]),
       countRows('leave_requests', [{ type: 'eq', column: 'status', value: 'Praja Reviewed' }]),
       countRows('leave_requests', [{ type: 'eq', column: 'status', value: 'Approved' }]),
-      countRows('leave_requests', [{ type: 'eq', column: 'status', value: 'Rejected' }]),
       countRows('departments'),
       getComplaintCount('Open'),
       getComplaintCount('In Progress'),
@@ -224,7 +223,7 @@ function Dashboard() {
       pendingLeaves,
       approvedLeaves,
       rejectedLeaves,
-      departments,
+      departments: departmentsCount,
       complaints: openComplaints + inProgressComplaints,
       openComplaints,
       inProgressComplaints,
@@ -373,7 +372,6 @@ function Dashboard() {
   if (loading) {
     return (
       <Layout>
-                 
         <div className="empty" style={styles.loading}>
           <div className="spinner-icon" />
           {t('loading') || 'Loading...'}</div>
