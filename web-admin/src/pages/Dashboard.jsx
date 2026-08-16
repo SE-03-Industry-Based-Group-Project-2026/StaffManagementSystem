@@ -84,6 +84,7 @@ function Dashboard() {
       if (rawRole.includes('chairman')) return 'සභාපති';
       if (rawRole.includes('secretary')) return 'ලේකම්';
       if (rawRole.includes('subject')) return 'විෂය භාර නිලධාරී';
+      if (rawRole.includes('department head')) return 'දෙපාර්තමේන්තු ප්‍රධානී';
       if (rawRole.includes('staff')) return 'කාර්ය මණ්ඩලය';
     } else if (isTamil) {
       if (rawRole.includes('admin')) return 'நிர்வாகி';
@@ -91,17 +92,20 @@ function Dashboard() {
       if (rawRole.includes('chairman')) return 'தலைவர்';
       if (rawRole.includes('secretary')) return 'செயலாளர்';
       if (rawRole.includes('subject')) return 'விடய அதிகாரி';
+      if (rawRole.includes('department head')) return 'திணைக்கள தலைவர்';
       if (rawRole.includes('staff')) return 'ஊழியர்';
     }
 
     return userObj?.roles?.role_name || userObj?.role || userObj?.role_name || 'Admin';
   };
 
-  const role =
+  const rawRole =
     user?.roles?.role_name ||
     user?.role ||
     user?.role_name ||
     'Admin';
+
+  const role = String(rawRole).trim();
 
   useEffect(() => {
     loadStats();
@@ -135,7 +139,7 @@ function Dashboard() {
       query = query.eq('status', status);
     }
 
-    if (role === 'Chairman' || role === 'Secretary') {
+    if (role === 'Chairman' || role === 'Secretary' || role === 'Department Head') {
       const { data: recipients } = await supabase
         .from('complaint_recipients')
         .select('complaint_id')
@@ -292,12 +296,18 @@ function Dashboard() {
       ['users', t('total_staff'), stats.totalStaff, 'active'],
       ['building', t('departments'), stats.departments, 'total_departments'],
       ['clipboard', t('leave_requests'), stats.pendingLeaves, 'waiting_final_decision'],
+      ['alert', t('complaints'), 'update_complaint_process', '/complaints'],
       ['clipboard', t('pending_tasks'), stats.pendingTasks, 'tasks_to_complete']
     ],
     Chairman: [
       ['users', t('total_staff'), stats.totalStaff, 'active'],
       ['building', t('departments'), stats.departments, 'total_departments'],
       ['clipboard', t('labor_leave_approvals'), stats.laborLeaves, 'labor_leave_only'],
+      ['alert', t('complaints'), stats.complaints, 'open_in_progress'],
+      ['clipboard', t('pending_tasks'), stats.pendingTasks, 'tasks_to_complete']
+    ],
+    'Department Head': [
+      ['users', t('total_staff'), stats.totalStaff, 'active'],
       ['alert', t('complaints'), stats.complaints, 'open_in_progress'],
       ['clipboard', t('pending_tasks'), stats.pendingTasks, 'tasks_to_complete']
     ]
@@ -331,6 +341,7 @@ function Dashboard() {
       ['users', t('staff_management'), 'view_staff_information', '/staff'],
       ['building', t('departments'), 'view_departments', '/departments'],
       ['clipboard', t('leave_requests'), 'leave_management_workflow', '/leave-requests'],
+      ['alert', t('complaints'), 'update_complaint_process', '/complaints'],
       ['clipboard', t('task_allocation'), 'manage_staff_tasks', '/tasks'],
       ['megaphone', t('announcements'), 'send_scheduled_notices', '/announcements'],
       ['report', t('reports'), 'view_reports', '/reports']
@@ -343,6 +354,11 @@ function Dashboard() {
       ['clipboard', t('task_allocation'), 'manage_staff_tasks', '/tasks'],
       ['megaphone', t('announcements'), 'send_scheduled_notices', '/announcements'],
       ['report', t('reports'), 'view_reports', '/reports']
+    ],
+    'Department Head': [
+      ['users', t('staff_management'), 'view_staff_information', '/staff'],
+      ['alert', t('complaints'), 'update_complaint_process', '/complaints'],
+      ['clipboard', t('task_allocation'), 'manage_staff_tasks', '/tasks']
     ]
   };
 
@@ -366,8 +382,8 @@ function Dashboard() {
     [t('overdue'), stats.overdueTasks, 'overdue']
   ];
 
-  const cards = cardsByRole[role] || cardsByRole.Admin;
-  const actions = actionsByRole[role] || actionsByRole.Admin;
+  const cards = cardsByRole[role] || cardsByRole['Department Head'] || cardsByRole.Admin;
+  const actions = actionsByRole[role] || actionsByRole['Department Head'] || actionsByRole.Admin;
 
   if (loading) {
     return (
@@ -460,7 +476,7 @@ function Dashboard() {
             t={t}
           />
 
-          {(role === 'Chairman' || role === 'Secretary') && (
+          {(role === 'Chairman' || role === 'Secretary' || role === 'Department Head') && (
             <DashboardChart
               title={t('complaint_status_overview')}
               icon="alert"

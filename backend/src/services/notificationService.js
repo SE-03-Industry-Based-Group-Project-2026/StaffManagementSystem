@@ -8,6 +8,7 @@ function translateRole(roleName, lang) {
     'secretary': { si: 'ලේකම්', ta: 'செயலாளர்', en: 'Secretary' },
     'chairman': { si: 'සභාපති', ta: 'தலைவர்', en: 'Chairman' },
     'cc officer': { si: 'සම්බන්ධීකරණ නිලධාරී', ta: 'ஒருங்கிணைப்பாளர்', en: 'CC Officer' },
+    'department head': { si: 'දෙපාර්තමේන්තු ප්‍රධානී', ta: 'திணைக்கள தலைவர்', en: 'Department Head' },
     'subject officer': { si: 'විෂය භාර නිලධාරී', ta: 'விடய அதிகாரி', en: 'Subject Officer' },
     'staff': { si: 'කාර්ය මණ්ඩලය', ta: 'ஊழியர்', en: 'Staff' }
   };
@@ -36,8 +37,6 @@ async function createNotification({
   let messageTa = message;
 
   const cleanKey = String(notificationKey || '').toLowerCase().trim();
-  const cleanTitle = String(title || '').toLowerCase().trim();
-
   const assignedByEn = payload.assigned_by || 'Admin';
   const assignedBySi = translateRole(assignedByEn, 'si');
   const assignedByTa = translateRole(assignedByEn, 'ta');
@@ -99,48 +98,45 @@ async function createNotification({
       messageTa = `பணியின் நிலை "${payload.status || ''}" என புதுப்பிக்கப்பட்டுள்ளது.`;
       break;
 
+    case 'complaint_reply':
+      titleEn = 'New response to your complaint';
+      titleSi = 'ඔබගේ පැමිණිල්ලට නව ප්‍රතිචාරයක් ලැබී ඇත';
+      titleTa = 'உங்கள் புகாருக்கு புதிய பதில் கிடைத்துள்ளது';
+      
+      const msgEn = payload.reply_message_en || payload.reply_message || '';
+      const msgSi = payload.reply_message_si || payload.reply_message || '';
+      const msgTa = payload.reply_message_ta || payload.reply_message || '';
 
-      case 'complaint_reply':
-        titleEn = 'New response to your complaint';
-        titleSi = 'ඔබගේ පැමිණිල්ලට නව ප්‍රතිචාරයක් ලැබී ඇත';
-        titleTa = 'உங்கள் புகாருக்கு புதிய பதில் கிடைத்துள்ளது';
-        
-        const msgEn = payload.reply_message_en || payload.reply_message || '';
-        const msgSi = payload.reply_message_si || payload.reply_message || '';
-        const msgTa = payload.reply_message_ta || payload.reply_message || '';
+      messageEn = `New response: ${msgEn}`;
+      messageSi = `නව ප්‍රතිචාරය: ${msgSi}`;
+      messageTa = `புதிய பதில்: ${msgTa}`;
+      break;
 
-        messageEn = `New response: ${msgEn}`;
-        messageSi = `නව ප්‍රතිචාරය: ${msgSi}`;
-        messageTa = `புதிய பதில்: ${msgTa}`;
-        break;
+    case 'complaint_status_updated':
+      const rawStatus = String(payload.status || '').toLowerCase().trim();
 
-        
-        case 'complaint_status_updated':
-        const rawStatus = String(payload.status || '').toLowerCase().trim();
+      titleEn = 'Complaint Status Update';
+      titleSi = 'පැමිණිලි තත්ත්වය යාවත්කාලීන විය';
+      titleTa = 'புகார் நிலை புதுப்பிக்கப்பட்டது';
 
-        titleEn = 'Complaint Status Update';
-        titleSi = 'පැමිණිලි තත්ත්වය යාවත්කාලීන විය';
-        titleTa = 'புகார் நிலை புதுப்பிக்கப்பட்டது';
-
-        if (rawStatus === 'resolved') {
-          messageEn = 'Your complaint has been resolved.';
-          messageSi = 'ඔබගේ පැමිණිල්ල විසඳන ලදී.';
-          messageTa = 'உங்கள் புகார் தீர்க்கப்பட்டுள்ளது.';
-        } 
-        
-        if (rawStatus === 'in progress') {
-          messageEn = 'Your complaint is in progress.';
-          messageSi = 'ඔබගේ පැමිණිල්ල ක්‍රියාත්මක වෙමින් පවතී.';
-          messageTa = 'உங்கள் புகார் செயலாக்கத்தில் உள்ளது.';
-        } 
-        
-        if (rawStatus === 'closed') {
-          messageEn = 'Your complaint has been closed.';
-          messageSi = 'ඔබගේ පැමිණිල්ල අවසන් කරන ලදී.';
-          messageTa = 'உங்கள் புகார் மூடப்பட்டுள்ளது.';
-        }
-        break;
-
+      if (rawStatus === 'resolved') {
+        messageEn = 'Your complaint has been resolved.';
+        messageSi = 'ඔබගේ පැමිණිල්ල විසඳන ලදී.';
+        messageTa = 'உங்கள் புகார் தீர்க்கப்பட்டுள்ளது.';
+      } 
+      
+      if (rawStatus === 'in progress') {
+        messageEn = 'Your complaint is in progress.';
+        messageSi = 'ඔබගේ පැමිණිල්ල ක්‍රියාත්මක වෙමින් පවතී.';
+        messageTa = 'உங்கள் புகார் செயலாக்கத்தில் உள்ளது.';
+      } 
+      
+      if (rawStatus === 'closed') {
+        messageEn = 'Your complaint has been closed.';
+        messageSi = 'ඔබගේ පැමිණිල්ල අවසන් කරන ලදී.';
+        messageTa = 'உங்கள் புகார் மூடப்பட்டுள்ளது.';
+      }
+      break;
 
     case 'privileges_updated':
       titleEn = 'System Privileges Updated';
@@ -158,35 +154,6 @@ async function createNotification({
       titleTa = 'புதிய அறிவிப்பு';
       messageSi = `නව නිවේදනයක් ප්‍රකාශයට පත් කර ඇත: "${payload.announcement_title || ''}"`;
       messageTa = `புதிய அறிவிப்பு வெளியிடப்பட்டுள்ளது: "${payload.announcement_title || ''}"`;
-      break;
-
-    case 'acting_officer_assigned':
-      titleEn = 'Duty Coverage Assigned';
-      messageEn = `You have been assigned as a duty coverage officer.`;
-      titleSi = 'රාජකාරි ආවරණ නිලධාරී පත්වීම';
-      titleTa = 'பணி பொறுப்பு நியமனம்';
-      messageSi = 'ඔබව රාජකාරි ආවරණ නිලධාරියා ලෙස පත් කර ඇත.';
-      messageTa = 'நீங்கள் பணி பொறுப்பு அதிகாரியாக நியமிக்கப்பட்டுள்ளீர்கள்.';
-      break;
-
-    case 'profile_request_approved':
-    case 'profile_change_approved':
-      titleEn = 'Profile Approved';
-      messageEn = `Your profile update request has been approved.`;
-      titleSi = 'පැතිකඩ ඉල්ලීම අනුමත විය';
-      titleTa = 'சுயவிவர கோரிக்கை அங்கீகரிக்கப்பட்டது';
-      messageSi = `ඔබගේ පැතිකඩ වෙනස් කිරීමේ ඉල්ලීම අනුමත කර ඇත.`;
-      messageTa = `உங்கள் சுயவிவர புதுப்பிப்பு கோரிக்கை அங்கீகரிக்கப்பட்டுள்ளது.`;
-      break;
-
-    case 'profile_request_rejected':
-    case 'profile_change_rejected':
-      titleEn = 'Profile Rejected';
-      messageEn = `Your profile update request has been rejected.`;
-      titleSi = 'පැතිකඩ ඉල්ලීම ප්‍රතික්ෂේප විය';
-      titleTa = 'சுயவிவர கோரிக்கை நிராகரிக்கப்பட்டது';
-      messageSi = `ඔබගේ පැතිකඩ වෙනස් කිරීමේ ඉල්ලීම ප්‍රතික්ෂේප කර ඇත.`;
-      messageTa = `உங்கள் சுயவிவர புதுப்பிப்பு கோரிக்கை நிராகரிக்கப்பட்டுள்ளது.`;
       break;
 
     default:
@@ -237,10 +204,7 @@ async function notifyRolePrivilegeChange({
 }) {
   try {
     if (!roleId) {
-      return {
-        success: false,
-        error: 'Role ID is required'
-      };
+      return { success: false, error: 'Role ID is required' };
     }
 
     const { data: users, error: usersError } = await supabase
@@ -248,23 +212,8 @@ async function notifyRolePrivilegeChange({
       .select('id, full_name, role_id')
       .eq('role_id', roleId);
 
-    if (usersError) {
-      console.error(
-        'Error finding users for role privilege notification:',
-        usersError.message
-      );
-
-      return {
-        success: false,
-        error: usersError.message
-      };
-    }
-
-    if (!users || users.length === 0) {
-      return {
-        success: true,
-        notifiedUsers: 0
-      };
+    if (usersError || !users || users.length === 0) {
+      return { success: true, notifiedUsers: 0 };
     }
 
     const { data: role } = await supabase
@@ -297,26 +246,12 @@ async function notifyRolePrivilegeChange({
     });
 
     const results = await Promise.all(notificationPromises);
+    const successCount = results.filter((result) => result?.success).length;
 
-    const successCount = results.filter(
-      (result) => result?.success
-    ).length;
-
-    return {
-      success: true,
-      notifiedUsers: successCount
-    };
-
+    return { success: true, notifiedUsers: successCount };
   } catch (error) {
-    console.error(
-      'notifyRolePrivilegeChange error:',
-      error
-    );
-
-    return {
-      success: false,
-      error: error.message
-    };
+    console.error('notifyRolePrivilegeChange error:', error);
+    return { success: false, error: error.message };
   }
 }
 
@@ -329,10 +264,7 @@ async function notifyUserPrivilegeChange({
 }) {
   try {
     if (!userId) {
-      return {
-        success: false,
-        error: 'User ID is required'
-      };
+      return { success: false, error: 'User ID is required' };
     }
 
     const { data: user, error: userError } = await supabase
@@ -342,10 +274,7 @@ async function notifyUserPrivilegeChange({
       .single();
 
     if (userError || !user) {
-      return {
-        success: false,
-        error: 'User not found'
-      };
+      return { success: false, error: 'User not found' };
     }
 
     const result = await createNotification({
@@ -367,17 +296,9 @@ async function notifyUserPrivilegeChange({
     });
 
     return result;
-
   } catch (error) {
-    console.error(
-      'notifyUserPrivilegeChange error:',
-      error
-    );
-
-    return {
-      success: false,
-      error: error.message
-    };
+    console.error('notifyUserPrivilegeChange error:', error);
+    return { success: false, error: error.message };
   }
 }
 

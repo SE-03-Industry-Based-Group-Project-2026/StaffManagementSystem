@@ -29,7 +29,8 @@ function Login() {
       'CC Officer': { en: 'CC Officer', si: 'CC නිලධාරී', ta: 'CC அதிகாரி' },
       'Chairman': { en: 'Chairman', si: 'සභාපතිතුමා', ta: 'தலைவர்' },
       'Secretary': { en: 'Secretary', si: 'ලේකම්තුමා', ta: 'செயலாளர்' },
-      'Subject Officer': { en: 'Subject Officer', si: 'විෂය භාර නිලධාරී', ta: 'விடய அதிகாரி' }
+      'Subject Officer': { en: 'Subject Officer', si: 'විෂය භාර නිලධාරී', ta: 'விடய அதிகாரி' },
+      'Department Head': { en: 'Department Head', si: 'දෙපාර්තමේන්තු ප්‍රධානී', ta: 'திணைக்கள தலைவர்' }
     };
     return names[roleName]?.[currentLang] || names[roleName]?.['en'] || roleName;
   };
@@ -107,7 +108,8 @@ function Login() {
         'Chairman',
         'CC Officer',
         'Subject Officer',
-        'Praja Officer'
+        'Praja Officer',
+        'Department Head'
       ];
 
       const userRole = userData.roles?.role_name;

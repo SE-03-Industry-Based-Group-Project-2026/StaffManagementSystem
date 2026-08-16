@@ -32,6 +32,8 @@ function Reports() {
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const role = user?.roles?.role_name || user?.role || user?.role_name || 'Admin';
+  const isDepartmentHead = role === 'Department Head';
+  const userDeptId = user?.department_id;
 
   const activeLanguage = String(
     language ||
@@ -59,6 +61,14 @@ function Reports() {
     loadEmployees();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 🌟 Department Head කෙනෙක් නම් ඩිපාර්ට්මන්ට් එක ස්වයංක්‍රීයව ලොක් කිරීම
+  useEffect(() => {
+    if (isDepartmentHead && userDeptId) {
+      setDepartment(String(userDeptId));
+      loadEmployees(String(userDeptId));
+    }
+  }, [isDepartmentHead, userDeptId]);
 
   const tr = (key, fallback) => {
     const value = t(key);
@@ -99,11 +109,13 @@ function Reports() {
 
     if (role === 'Praja Officer') {
       rows = rows.filter((d) => ['library', 'preschool'].includes(String(d.department_type || '').trim().toLowerCase()));
+    } else if (isDepartmentHead && userDeptId) {
+      rows = rows.filter((d) => Number(d.id) === Number(userDeptId));
     }
 
     setDepartments(rows);
 
-    if (role === 'Praja Officer' && rows.length > 0) {
+    if ((role === 'Praja Officer' || isDepartmentHead) && rows.length > 0) {
       setDepartment((prev) => prev || String(rows[0].id));
     }
   };
@@ -112,8 +124,9 @@ function Reports() {
     try {
       const params = new URLSearchParams();
 
-      if (departmentId) {
-        params.append('department_id', departmentId);
+      const targetDeptId = isDepartmentHead ? userDeptId : departmentId;
+      if (targetDeptId) {
+        params.append('department_id', targetDeptId);
       }
 
       const headers = await getAuthHeaders();
@@ -208,7 +221,10 @@ function Reports() {
 
       if (startDate) params.append('start_date', startDate);
       if (endDate) params.append('end_date', endDate);
-      if (department) params.append('department_id', department);
+      
+      const targetDeptId = isDepartmentHead ? userDeptId : department;
+      if (targetDeptId) params.append('department_id', targetDeptId);
+
       if (employee) params.append('user_id', employee);
 
       const headers = await getAuthHeaders();
@@ -219,7 +235,6 @@ function Reports() {
       const result = await res.json();
 
       if (!res.ok) {
-        // 🌟 මෙතැනින් Backend එකෙන් එන 403 Access Denied දෝෂය පැහැදිලි Toast එකක් ලෙස පෙන්වයි
         toast.error(result.error || tr('access_denied', 'Access denied. You do not have permission.'));
         setData([]);
         setSummary({});
@@ -459,14 +474,14 @@ function Reports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, reportType, activeLanguage, t]);
 
-  const shouldGroupByDepartment = department === '';
+  const shouldGroupByDepartment = !isDepartmentHead && department === '';
   const COLORS = ['#16a34a', '#f97316', '#2563eb', '#7c3aed', '#dc2626', '#64748b'];
 
   const exportPDF = async () => {
     if (!reportGenerated) return;
 
     const selectedDept = departments.find(
-      (d) => String(d.id) === String(department)
+      (d) => String(d.id) === String(isDepartmentHead ? userDeptId : department)
     );
 
     const CONTAINER_WIDTH = reportType === 'staff' ? 1600 : 1120;
@@ -844,7 +859,7 @@ function Reports() {
     if (!reportGenerated) return;
 
     const selectedDept = departments.find(
-      (d) => String(d.id) === String(department)
+      (d) => String(d.id) === String(isDepartmentHead ? userDeptId : department)
     );
 
     const escapeCsv = (value) =>
@@ -1220,19 +1235,26 @@ function Reports() {
             <label>{tr('department', 'Department')}</label>
             <select
               className="select"
-              value={department}
+              value={isDepartmentHead ? userDeptId : department}
               onChange={(e) => {
-                const selectedDepartment = e.target.value;
-                setDepartment(selectedDepartment);
-                setEmployee('');
-                loadEmployees(selectedDepartment);
-                setReportGenerated(false);
-                setData([]);
-                setSummary({});
+                if (!isDepartmentHead) {
+                  const selectedDepartment = e.target.value;
+                  setDepartment(selectedDepartment);
+                  setEmployee('');
+                  loadEmployees(selectedDepartment);
+                  setReportGenerated(false);
+                  setData([]);
+                  setSummary({});
+                }
               }}
-              style={{ width: '100%' }}
+              disabled={isDepartmentHead}
+              style={{
+                width: '100%',
+                backgroundColor: isDepartmentHead ? 'var(--gray-100)' : 'var(--bg-primary)',
+                cursor: isDepartmentHead ? 'not-allowed' : 'pointer'
+              }}
             >
-              {role !== 'Praja Officer' && <option value="">{tr('all_departments', 'All Departments')}</option>}
+              {!isDepartmentHead && role !== 'Praja Officer' && <option value="">{tr('all_departments', 'All Departments')}</option>}
               {departments.map((d) => (
                 <option key={d.id} value={d.id}>
                   {getLocalizedDepartmentName(d)}

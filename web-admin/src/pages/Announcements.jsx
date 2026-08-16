@@ -49,6 +49,8 @@ function Announcements() {
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const role = user?.roles?.role_name || user?.role || user?.role_name || 'Admin';
   const isPrajaOfficer = role === 'Praja Officer';
+  const isDepartmentHead = role === 'Department Head';
+  const userDeptId = user?.department_id;
 
   const getAuthHeaders = async () => {
     const { data: { session } } = await supabase.auth.getSession();
@@ -108,6 +110,7 @@ function Announcements() {
     else if (roleKey === 'Subject Officer') roleKey = 'subject_officer';
     else if (roleKey === 'Staff') roleKey = 'staff';
     else if (roleKey === 'Praja Officer') roleKey = 'praja_officer';
+    else if (roleKey === 'Department Head') roleKey = 'department_head';
 
     return t(roleKey) || roleName;
   };
@@ -129,11 +132,18 @@ function Announcements() {
         return;
       }
 
-      const visibleAnnouncements = isPrajaOfficer
-        ? (data || []).filter((announcement) => isPrajaDepartment(announcement.departments))
-        : (data || []);
+      let fetchedAnnouncements = data || [];
 
-      setAnnouncements(visibleAnnouncements);
+      // 🌟 Department Head කෙනෙක් නම් තමන්ගේ department එකේ announcements පමණක් පෙන්වීම
+      if (isDepartmentHead && userDeptId) {
+        fetchedAnnouncements = fetchedAnnouncements.filter(
+          (ann) => Number(ann.department_id) === Number(userDeptId)
+        );
+      } else if (isPrajaOfficer) {
+        fetchedAnnouncements = fetchedAnnouncements.filter((announcement) => isPrajaDepartment(announcement.departments));
+      }
+
+      setAnnouncements(fetchedAnnouncements);
     } catch (error) {
       console.error(error);
       showError(tr('failed_connect_backend', 'Failed to connect backend'));
@@ -156,13 +166,17 @@ function Announcements() {
         return;
       }
 
-      const visibleDepartments = isPrajaOfficer
-        ? (data || []).filter(isPrajaDepartment)
-        : (data || []);
+      let visibleDepartments = data || [];
+
+      if (isDepartmentHead && userDeptId) {
+        visibleDepartments = visibleDepartments.filter(d => Number(d.id) === Number(userDeptId));
+      } else if (isPrajaOfficer) {
+        visibleDepartments = visibleDepartments.filter(isPrajaDepartment);
+      }
 
       setDepartments(visibleDepartments);
 
-      if (isPrajaOfficer && visibleDepartments.length > 0) {
+      if ((isPrajaOfficer || isDepartmentHead) && visibleDepartments.length > 0) {
         setFormData((prev) => ({
           ...prev,
           department_id:
@@ -181,8 +195,8 @@ function Announcements() {
       title: '',
       message: '',
       department_id:
-        isPrajaOfficer && departments.length > 0
-          ? String(departments[0].id)
+        (isPrajaOfficer || isDepartmentHead) && departments.length > 0
+          ? String(userDeptId || departments[0].id)
           : '',
       expires_at: '',
       priority: 'Medium'
@@ -211,7 +225,7 @@ function Announcements() {
       user?.profile_id ||
       user?.id;
 
-    if (announcement.created_by !== currentUserId) {
+    if (announcement.created_by !== currentUserId && !isDepartmentHead) {
       showError(t('access_denied_authorized') || 'You do not have permission to edit this announcement.');
       return;
     }
@@ -221,7 +235,7 @@ function Announcements() {
     setFormData({
       title: announcement.title || '',
       message: announcement.message || '',
-      department_id: announcement.department_id || '',
+      department_id: announcement.department_id || (isDepartmentHead ? userDeptId : ''),
       expires_at: utcToSriLankaDateTimeInput(announcement.expires_at),
       priority: announcement.priority || 'Medium'
     });
@@ -235,28 +249,25 @@ function Announcements() {
     resetForm();
   };
 
-  
   const sendAnnouncement = async (e) => {
     e.preventDefault();
 
-    if (isPrajaOfficer && !formData.department_id) {
-      showError(tr('select_department', 'Please select Library Service or Pre School Service'));
+    if ((isPrajaOfficer || isDepartmentHead) && !formData.department_id) {
+      showError(tr('select_department', 'Please select a department'));
       return;
     }
 
     setSending(true);
 
-    // If expires_at is given as local datetime-local, convert or format nicely
     let formattedExpiresAt = formData.expires_at || null;
     if (formattedExpiresAt && !formattedExpiresAt.endsWith('Z') && !formattedExpiresAt.includes('+')) {
-      // Ensure it's treated as ISO string for backend
       formattedExpiresAt = new Date(formData.expires_at).toISOString();
     }
 
     const payload = {
       title: formData.title.trim(),
       message: formData.message.trim(),
-      department_id: formData.department_id ? Number(formData.department_id) : null,
+      department_id: isDepartmentHead ? Number(userDeptId) : (formData.department_id ? Number(formData.department_id) : null),
       expires_at: formattedExpiresAt,
       priority: formData.priority || 'Medium'
     };
@@ -302,6 +313,13 @@ function Announcements() {
     const keyword = searchTerm.toLowerCase().trim();
 
     return announcements.filter((ann) => {
+      // 🌟 Department Head කෙනෙක් නම් තමන්ගේ department එකේ announcements පමණක් පෙන්වීම
+      if (isDepartmentHead && userDeptId) {
+        if (Number(ann.department_id) !== Number(userDeptId)) {
+          return false;
+        }
+      }
+
       const deptName = ann.departments?.department_name || '';
       const deptType = ann.departments?.department_type || '';
       const roleMatch = !isPrajaOfficer || isPrajaDepartment(ann.departments);
@@ -315,18 +333,18 @@ function Announcements() {
         ann.priority?.toLowerCase().includes(keyword)
       );
     });
-  }, [announcements, searchTerm, isPrajaOfficer]);
+  }, [announcements, searchTerm, isPrajaOfficer, isDepartmentHead, userDeptId]);
 
   const stats = useMemo(() => {
     const today = new Date().toDateString();
 
     return {
-      total: announcements.length,
-      urgent: announcements.filter((a) => a.priority === 'Urgent').length,
-      scheduled: announcements.filter((a) => a.expires_at).length,
-      publishedToday: announcements.filter((a) => new Date(a.created_at).toDateString() === today).length
+      total: filteredAnnouncements.length,
+      urgent: filteredAnnouncements.filter((a) => a.priority === 'Urgent').length,
+      scheduled: filteredAnnouncements.filter((a) => a.expires_at).length,
+      publishedToday: filteredAnnouncements.filter((a) => new Date(a.created_at).toDateString() === today).length
     };
-  }, [announcements]);
+  }, [filteredAnnouncements]);
 
   const getPriorityStyle = (priority) => {
     if (priority === 'Urgent') return { bg: '#fee2e2', color: '#dc2626' };
@@ -451,7 +469,7 @@ function Announcements() {
                           </div>
                         </div>
 
-                        {ann.created_by === user.id && (
+                        {(ann.created_by === user.id || isDepartmentHead) && (
                           <button onClick={(e) => openEditModal(e, ann)} style={styles.miniEditBtn} type="button">
                             {t('edit')}
                           </button>
@@ -585,17 +603,22 @@ function Announcements() {
                   <div style={styles.formGroup}>
                     <label style={styles.label}>{t('department')}</label>
                     <select
-                      value={formData.department_id}
+                      value={isDepartmentHead ? userDeptId : formData.department_id}
                       onChange={(e) =>
-                        setFormData({
+                        !isDepartmentHead && setFormData({
                           ...formData,
                           department_id: e.target.value
                         })
                       }
-                      style={styles.select}
-                      required={isPrajaOfficer}
+                      style={{
+                        ...styles.select,
+                        backgroundColor: isDepartmentHead ? 'var(--gray-100)' : 'var(--gray-50)',
+                        cursor: isDepartmentHead ? 'not-allowed' : 'pointer'
+                      }}
+                      disabled={isDepartmentHead}
+                      required={isPrajaOfficer || isDepartmentHead}
                     >
-                      {!isPrajaOfficer && (
+                      {!isPrajaOfficer && !isDepartmentHead && (
                         <option value="">
                           {t('all_departments')}
                         </option>

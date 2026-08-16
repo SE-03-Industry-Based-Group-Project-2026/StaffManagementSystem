@@ -53,6 +53,8 @@ function DepartmentManagement() {
   const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
   const currentRole = currentUser?.roles?.role_name || currentUser?.role || currentUser?.role_name || '';
   const isAdmin = currentRole === 'Admin';
+  const isDepartmentHead = currentRole === 'Department Head';
+  const userDeptId = currentUser?.department_id;
 
   useEffect(() => {
     const loadPageData = async () => {
@@ -105,7 +107,13 @@ function DepartmentManagement() {
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to load departments');
 
-      setDepartments(Array.isArray(result) ? result : []);
+      let fetchedDepts = Array.isArray(result) ? result : [];
+
+      if (isDepartmentHead && userDeptId) {
+        fetchedDepts = fetchedDepts.filter(d => Number(d.id) === Number(userDeptId));
+      }
+
+      setDepartments(fetchedDepts);
     } catch (error) {
       showError(error.message);
       setDepartments([]);
@@ -151,12 +159,18 @@ function DepartmentManagement() {
   };
 
   const openCreateModal = () => {
+    if (!isAdmin) return;
     setEditing(null);
     resetForm();
     setShowModal(true);
   };
 
   const openEditModal = async (dept) => {
+    if (isDepartmentHead && Number(dept.id) !== Number(userDeptId)) {
+      showError('You can only manage your own department.');
+      return;
+    }
+
     setEditing(dept.id);
     setFormData({
       department_name: dept.department_name || '',
@@ -198,7 +212,15 @@ function DepartmentManagement() {
     setDesignationsInput([...designationsInput, { designation_en: '', designation_si: '', designation_ta: '' }]);
   };
 
-  const handleRemoveDesignationField = (index) => {
+  const handleRemoveDesignationField = async (index) => {
+    const item = designationsInput[index];
+    if (item.id) {
+      const { error } = await supabase.from('designations').delete().eq('id', item.id);
+      if (error) {
+        showError('Failed to delete designation from database');
+        return;
+      }
+    }
     const list = [...designationsInput];
     list.splice(index, 1);
     setDesignationsInput(list);
@@ -302,12 +324,16 @@ function DepartmentManagement() {
   };
 
   const handleDeleteClick = (dept) => {
+    if (!isAdmin) {
+      showError('Only Administrator can delete departments.');
+      return;
+    }
     setDeptToDelete(dept);
     setDeleteModalOpen(true);
   };
 
   const confirmDelete = async () => {
-    if (!deptToDelete) return;
+    if (!deptToDelete || !isAdmin) return;
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) throw new Error('Session expired');
@@ -434,6 +460,7 @@ function DepartmentManagement() {
             {filteredDepartments.map((dept) => {
               const countInfo = staffCounts[dept.id] || { total: 0, active: 0 };
               const typeName = tr(dept.department_type?.toLowerCase(), dept.department_type || 'Regular');
+              const canEditThisDept = isAdmin || (isDepartmentHead && Number(dept.id) === Number(userDeptId));
 
               return (
                 <div
@@ -455,7 +482,7 @@ function DepartmentManagement() {
                   />
                   <div style={styles.thumbnailOverlay} />
 
-                  {isAdmin && hoveredId === dept.id && (
+                  {canEditThisDept && hoveredId === dept.id && (
                     <div style={styles.actionFloat} onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={() => openEditModal(dept)}
@@ -466,14 +493,16 @@ function DepartmentManagement() {
                         <AppIcon name="edit" size={17} />
                       </button>
 
-                      <button
-                        onClick={() => handleDeleteClick(dept)}
-                        style={{ ...styles.iconBtn, color: '#dc2626' }}
-                        type="button"
-                        title={t('delete')}
-                      >
-                        <AppIcon name="trash" size={17} />
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteClick(dept)}
+                          style={{ ...styles.iconBtn, color: '#dc2626' }}
+                          type="button"
+                          title={t('delete')}
+                        >
+                          <AppIcon name="trash" size={17} />
+                        </button>
+                      )}
                     </div>
                   )}
 
@@ -504,7 +533,7 @@ function DepartmentManagement() {
         {/* DEPARTMENT DETAILS MODAL */}
         {detailModalOpen && selectedDept && (
           <div style={styles.modalOverlay} onClick={() => setDetailModalOpen(false)}>
-            <div style={{ ...styles.modalBox, maxWidth: 700 }} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <h2 style={styles.modalTitle}>{getDepartmentDisplayName(selectedDept)}</h2>
                 <button onClick={() => setDetailModalOpen(false)} style={styles.closeBtn} type="button">
@@ -562,7 +591,7 @@ function DepartmentManagement() {
         )}
 
         {/* DELETE CONFIRMATION MODAL */}
-        {deleteModalOpen && (
+        {deleteModalOpen && isAdmin && (
           <div style={styles.modalOverlay} onClick={() => setDeleteModalOpen(false)}>
             <div style={{ ...styles.modalBox, maxWidth: 420, textAlign: 'center', padding: '24px' }} onClick={(e) => e.stopPropagation()}>
               <div style={{ width: 54, height: 54, borderRadius: '50%', backgroundColor: '#fee2e2', color: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
@@ -586,10 +615,10 @@ function DepartmentManagement() {
           </div>
         )}
 
-        {/* ADD / EDIT DEPARTMENT MODAL */}
+        {/* ADD / EDIT DEPARTMENT & DESIGNATIONS MODAL */}
         {showModal && (
           <div style={styles.modalOverlay} onClick={closeModal}>
-            <div style={{ ...styles.modalBox, maxWidth: 650 }} onClick={(e) => e.stopPropagation()}>
+            <div style={styles.modalBox} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
                 <h2 style={styles.modalTitle}>{editing ? t('edit_department') : t('new_department')}</h2>
                 <button onClick={closeModal} style={styles.closeBtn} type="button">
@@ -597,142 +626,142 @@ function DepartmentManagement() {
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} style={styles.modalBody}>
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{tr('department_name_en', 'Department Name (English)')}</label>
-                  <input
-                    style={styles.input}
-                    required
-                    value={formData.department_name}
-                    onChange={(e) => setFormData({ ...formData, department_name: e.target.value })}
-                    onBlur={(e) => handleAutoTranslate(e.target.value)}
-                  />
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{tr('department_name_si', 'Department Name (Sinhala)')}</label>
-                  <input
-                    style={styles.input}
-                    value={formData.department_name_si}
-                    onChange={(e) => setFormData({ ...formData, department_name_si: e.target.value })}
-                  />
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{tr('department_name_ta', 'Department Name (Tamil)')}</label>
-                  <input
-                    style={styles.input}
-                    value={formData.department_name_ta}
-                    onChange={(e) => setFormData({ ...formData, department_name_ta: e.target.value })}
-                  />
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{tr('department_type', 'Department Type')}</label>
-                  <select
-                    style={styles.select}
-                    value={formData.department_type}
-                    onChange={(e) => setFormData({ ...formData, department_type: e.target.value })}
-                  >
-                    <option value="Regular">{tr('regular', 'Regular')}</option>
-                    <option value="Library">{tr('library', 'Library')}</option>
-                    <option value="Preschool">{tr('preschool', 'Preschool')}</option>
-                  </select>
-                </div>
-
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{tr('description', 'Description')}</label>
-                  <textarea
-                    style={styles.textarea}
-                    rows="3"
-                    value={formData.description || ''}
-                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  />
-                </div>
-
-                {/* IMAGE UPLOAD OR DIRECT URL */}
-                <div style={styles.formGroup}>
-                  <label style={styles.label}>{tr('department_image', 'Department Image (Upload or URL)')}</label>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+              <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+                <div style={styles.modalBody}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>{tr('department_name_en', 'Department Name (English)')}</label>
                     <input
-                      type="file"
-                      ref={fileInputRef}
-                      accept="image/*"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                          setImageFile(e.target.files[0]);
-                        }
-                      }}
-                      style={{ fontSize: '13px' }}
+                      style={styles.input}
+                      required
+                      value={formData.department_name}
+                      onChange={(e) => setFormData({ ...formData, department_name: e.target.value })}
+                      onBlur={(e) => handleAutoTranslate(e.target.value)}
                     />
-                    {imageFile && (
-                      <button type="button" onClick={resetFile} style={{ ...styles.secondaryBtn, padding: '4px 10px', fontSize: '12px' }}>
-                        Clear File
-                      </button>
-                    )}
-                  </div>
-                  <input
-                    style={styles.input}
-                    placeholder="Or paste image direct URL here..."
-                    value={formData.image_url || ''}
-                    onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
-                  />
-                </div>
-
-                {/* DESIGNATIONS SECTION */}
-                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 16 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <label style={{ ...styles.label, margin: 0 }}>{tr('designations_under_dept', 'Designations under this Department')}</label>
-                    <button type="button" onClick={handleAddDesignationField} style={{ ...styles.secondaryBtn, padding: '6px 12px', fontSize: 13 }}>
-                      {tr('add_designation', '+ Add Designation')}
-                    </button>
                   </div>
 
-                  {designationsInput.map((item, index) => (
-                    <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>{tr('department_name_si', 'Department Name (Sinhala)')}</label>
+                    <input
+                      style={styles.input}
+                      value={formData.department_name_si}
+                      onChange={(e) => setFormData({ ...formData, department_name_si: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>{tr('department_name_ta', 'Department Name (Tamil)')}</label>
+                    <input
+                      style={styles.input}
+                      value={formData.department_name_ta}
+                      onChange={(e) => setFormData({ ...formData, department_name_ta: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>{tr('department_type', 'Department Type')}</label>
+                    <select
+                      style={styles.select}
+                      value={formData.department_type}
+                      onChange={(e) => setFormData({ ...formData, department_type: e.target.value })}
+                    >
+                      <option value="Regular">{tr('regular', 'Regular')}</option>
+                      <option value="Library">{tr('library', 'Library')}</option>
+                      <option value="Preschool">{tr('preschool', 'Preschool')}</option>
+                    </select>
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>{tr('description', 'Description')}</label>
+                    <textarea
+                      style={styles.textarea}
+                      rows="3"
+                      value={formData.description || ''}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={styles.formGroup}>
+                    <label style={styles.label}>{tr('department_image', 'Department Image (Upload or URL)')}</label>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
                       <input
-                        style={styles.input}
-                        placeholder={tr('english_name', 'English Name')}
-                        value={item.designation_en}
-                        onChange={(e) => handleDesignationChange(index, 'designation_en', e.target.value)}
-                        onBlur={async (e) => {
-                          const val = e.target.value;
-                          if (val.trim() && (!item.designation_si || !item.designation_ta)) {
-                            try {
-                              const [resSi, resTa] = await Promise.all([
-                                fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(val)}&langpair=en|si`).then(r => r.json()),
-                                fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(val)}&langpair=en|ta`).then(r => r.json())
-                              ]);
-                              
-                              const list = [...designationsInput];
-                              if (resSi?.responseData?.translatedText) list[index].designation_si = resSi.responseData.translatedText;
-                              if (resTa?.responseData?.translatedText) list[index].designation_ta = resTa.responseData.translatedText;
-                              setDesignationsInput(list);
-                            } catch (err) {
-                              console.error(err);
-                            }
+                        type="file"
+                        ref={fileInputRef}
+                        accept="image/*"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            setImageFile(e.target.files[0]);
                           }
                         }}
+                        style={{ fontSize: '13px' }}
                       />
-                      <input
-                        style={styles.input}
-                        placeholder={tr('sinhala_name', 'සිංහල නම')}
-                        value={item.designation_si}
-                        onChange={(e) => handleDesignationChange(index, 'designation_si', e.target.value)}
-                      />
-                      <input
-                        style={styles.input}
-                        placeholder={tr('tamil_name', 'தமிழ் பெயர்')}
-                        value={item.designation_ta}
-                        onChange={(e) => handleDesignationChange(index, 'designation_ta', e.target.value)}
-                      />
-                      {designationsInput.length > 1 && (
-                        <button type="button" onClick={() => handleRemoveDesignationField(index)} style={{ ...styles.iconBtn, color: '#dc2626', width: 32, height: 32 }}>
-                          <AppIcon name="trash" size={15} />
+                      {imageFile && (
+                        <button type="button" onClick={resetFile} style={{ ...styles.secondaryBtn, padding: '4px 10px', fontSize: '12px' }}>
+                          Clear File
                         </button>
                       )}
                     </div>
-                  ))}
+                    <input
+                      style={styles.input}
+                      placeholder="Or paste image direct URL here..."
+                      value={formData.image_url || ''}
+                      onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
+                    />
+                  </div>
+
+                  <div style={{ borderTop: '1px solid var(--border)', paddingTop: 16, marginTop: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                      <label style={{ ...styles.label, margin: 0 }}>{tr('designations_under_dept', 'Designations under this Department')}</label>
+                      <button type="button" onClick={handleAddDesignationField} style={{ ...styles.secondaryBtn, padding: '6px 12px', fontSize: 13 }}>
+                        {tr('add_designation', '+ Add Designation')}
+                      </button>
+                    </div>
+
+                    {designationsInput.map((item, index) => (
+                      <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, marginBottom: 10, alignItems: 'center' }}>
+                        <input
+                          style={styles.input}
+                          placeholder={tr('english_name', 'English Name')}
+                          value={item.designation_en}
+                          onChange={(e) => handleDesignationChange(index, 'designation_en', e.target.value)}
+                          onBlur={async (e) => {
+                            const val = e.target.value;
+                            if (val.trim() && (!item.designation_si || !item.designation_ta)) {
+                              try {
+                                const [resSi, resTa] = await Promise.all([
+                                  fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(val)}&langpair=en|si`).then(r => r.json()),
+                                  fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(val)}&langpair=en|ta`).then(r => r.json())
+                                ]);
+                                
+                                const list = [...designationsInput];
+                                if (resSi?.responseData?.translatedText) list[index].designation_si = resSi.responseData.translatedText;
+                                if (resTa?.responseData?.translatedText) list[index].designation_ta = resTa.responseData.translatedText;
+                                setDesignationsInput(list);
+                              } catch (err) {
+                                console.error(err);
+                              }
+                            }
+                          }}
+                        />
+                        <input
+                          style={styles.input}
+                          placeholder={tr('sinhala_name', 'සිංහල නම')}
+                          value={item.designation_si}
+                          onChange={(e) => handleDesignationChange(index, 'designation_si', e.target.value)}
+                        />
+                        <input
+                          style={styles.input}
+                          placeholder={tr('tamil_name', 'தமிழ் பெயர்')}
+                          value={item.designation_ta}
+                          onChange={(e) => handleDesignationChange(index, 'designation_ta', e.target.value)}
+                        />
+                        {designationsInput.length > 1 && (
+                          <button type="button" onClick={() => handleRemoveDesignationField(index)} style={{ ...styles.iconBtn, color: '#dc2626', width: 32, height: 32 }}>
+                            <AppIcon name="trash" size={15} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
                 <div style={styles.modalActions}>
@@ -791,31 +820,57 @@ const styles = {
   searchInput: { border: 'none', outline: 'none', background: 'transparent', width: '100%', fontSize: '14px', color: 'var(--text-primary)' },
   filterSelect: { padding: '10px 16px', border: '1px solid var(--border)', borderRadius: '8px', backgroundColor: 'var(--card)', color: 'var(--text-primary)', fontSize: '14px', outline: 'none', cursor: 'pointer' },
   emptyState: { margin: '0 24px', padding: 54, textAlign: 'center', color: 'var(--text-secondary)', backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: 12 },
-  departmentsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 24, padding: '0 24px', marginBottom: '40px' },
-  thumbnailCard: { position: 'relative', borderRadius: '16px', overflow: 'hidden', height: '240px', backgroundColor: 'var(--card)', cursor: 'pointer', boxShadow: '0 12px 24px rgba(15,23,42,.08)' },
-  thumbnailImage: { width: '100%', height: '100%', objectFit: 'cover' },
-  thumbnailOverlay: { position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.88) 0%, rgba(0,0,0,0.25) 55%, rgba(0,0,0,0.35) 100%)' },
-  actionFloat: { position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '8px', zIndex: 10 },
-  iconBtn: { width: '36px', height: '36px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.92)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: colors.primary, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' },
-  thumbnailContent: { position: 'absolute', bottom: '16px', left: '16px', right: '16px' },
-  cardTopLine: { marginBottom: 8 },
-  typeBadge: { background: 'rgba(255,255,255,0.22)', backdropFilter: 'blur(4px)', padding: '4px 10px', borderRadius: 999, color: '#ffffff', fontSize: '12px', fontWeight: 700, border: '1px solid rgba(255,255,255,0.3)' },
-  thumbnailTitle: { color: '#ffffff', margin: '0 0 8px 0', fontSize: '21px', fontWeight: 800, textShadow: '0 2px 4px rgba(0,0,0,0.6)', letterSpacing: '0.3px' },
-  thumbnailDesc: { color: 'rgba(255,255,255,.85)', fontSize: 13, lineHeight: 1.4, margin: '0 0 10px 0', maxHeight: 38, overflow: 'hidden' },
-  thumbnailMeta: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' },
-  glassBadge: { background: 'rgba(255,255,255,0.25)', backdropFilter: 'blur(4px)', padding: '4px 10px', borderRadius: '6px', color: '#ffffff', fontSize: '12px', fontWeight: 600, border: '1px solid rgba(255,255,255,0.3)' },
-  modalOverlay: { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: 20 },
-  modalBox: { backgroundColor: 'var(--card)', borderRadius: '12px', width: '100%', maxWidth: 700, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' },
-  modalHeader: { padding: 24, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  
+  departmentsGrid: { display: 'flex', flexDirection: 'column', gap: 24, padding: '0 24px', marginBottom: '40px' },
+  thumbnailCard: { position: 'relative', borderRadius: '16px', overflow: 'hidden', width: '100%', minHeight: '300px', backgroundColor: 'var(--card)', cursor: 'pointer', boxShadow: '0 12px 24px rgba(15,23,42,.08)', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' },
+  thumbnailImage: { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' },
+  thumbnailOverlay: { position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 60%, rgba(0,0,0,0.2) 100%)' },
+  actionFloat: { position: 'absolute', top: '20px', right: '20px', display: 'flex', gap: '10px', zIndex: 10 },
+  iconBtn: { width: '40px', height: '40px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.92)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: 'var(--primary)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' },
+  thumbnailContent: { position: 'relative', zIndex: 2, padding: '30px' },
+  cardTopLine: { marginBottom: 10 },
+  typeBadge: { background: 'rgba(255,255,255,0.25)', backdropFilter: 'blur(6px)', padding: '5px 12px', borderRadius: 999, color: '#ffffff', fontSize: '13px', fontWeight: 700, border: '1px solid rgba(255,255,255,0.35)' },
+  thumbnailTitle: { color: '#ffffff', margin: '0 0 10px 0', fontSize: '26px', fontWeight: 800, textShadow: '0 2px 6px rgba(0,0,0,0.7)', letterSpacing: '0.4px' },
+  thumbnailDesc: { color: 'rgba(255,255,255,.9)', fontSize: 15, lineHeight: 1.5, margin: '0 0 16px 0', maxWidth: '800px' },
+  thumbnailMeta: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' },
+  glassBadge: { background: 'rgba(255,255,255,0.25)', backdropFilter: 'blur(6px)', padding: '6px 14px', borderRadius: '8px', color: '#ffffff', fontSize: '13px', fontWeight: 600, border: '1px solid rgba(255,255,255,0.35)' },
+  modalOverlay: { position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 9999, padding: '20px' },
+  modalOverlay: { 
+    position: 'fixed', 
+    top: 0, 
+    left: 0, 
+    width: '100vw', 
+    height: '100vh', 
+    backgroundColor: 'rgba(0, 0, 0, 0.65)', 
+    display: 'flex', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    zIndex: 999999, 
+    padding: '20px' 
+  },
+  modalBox: { 
+    backgroundColor: 'var(--card)', 
+    borderRadius: '16px', 
+    width: '100%', 
+    maxWidth: 700, 
+    maxHeight: '90vh', 
+    display: 'flex', 
+    flexDirection: 'column', 
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.4)', 
+    overflow: 'hidden',
+    position: 'relative',
+    zIndex: 1000000
+  },
+  modalHeader: { padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--bg-secondary)', flexShrink: 0 },
   modalTitle: { fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', margin: 0 },
   closeBtn: { width: 32, height: 32, borderRadius: 6, border: 'none', backgroundColor: 'var(--gray-100)', color: 'var(--text-secondary)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' },
-  modalBody: { padding: 24 },
-  formGroup: { marginBottom: 20 },
+  modalBody: { padding: '24px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' },
+  formGroup: { marginBottom: 0 },
   label: { display: 'block', fontSize: 14, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 8 },
   input: { width: '100%', padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)', boxSizing: 'border-box' },
   select: { width: '100%', padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)', boxSizing: 'border-box', cursor: 'pointer' },
   textarea: { width: '100%', padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 8, fontSize: 14, color: 'var(--text-primary)', backgroundColor: 'var(--bg-primary)', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' },
-  modalActions: { display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 24 },
+  modalActions: { padding: '16px 24px', borderTop: '1px solid var(--border)', backgroundColor: 'var(--bg-secondary)', display: 'flex', gap: 12, justifyContent: 'flex-end', flexShrink: 0 },
   loading: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100%' },
   loadingBox: { display: 'flex', alignItems: 'center', gap: 12, color: 'var(--muted)', fontSize: 14, fontWeight: 600 }
 };

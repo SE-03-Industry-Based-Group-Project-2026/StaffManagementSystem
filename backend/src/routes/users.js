@@ -13,14 +13,14 @@ router.get(
     'Secretary',
     'Chairman',
     'CC Officer',
-    'Subject Officer'
+    'Subject Officer',
+    'Department Head'
   ]),
   async (req, res) => {
     try {
       const roleName = req.userRole; 
       const roleId = req.userData.role_id;
 
-      
       if (roleName !== 'Admin') {
         const { data: privData } = await supabase
           .from('role_privileges')
@@ -28,14 +28,14 @@ router.get(
           .eq('role_id', roleId)
           .eq('system_privileges.privilege_key', 'staff_view_profile')
           .maybeSingle();
-        if (!privData || privData.is_enabled !== true) {
+          
+        if (privData && privData.is_enabled === false) {
           return res.status(403).json({ 
             error: `Access denied. This privilege is disabled for your role (${roleName}).` 
           });
         }
       }
 
-      // ඩේටා ලබා දීම
       const { data, error } = await supabase
         .from('users')
         .select(`
@@ -63,7 +63,7 @@ router.get(
 router.post(
   '/register',
   authenticate,
-  checkRole(['Admin', 'Subject Officer']),
+  checkRole(['Admin', 'Subject Officer', 'Secretary', 'Department Head']),
   async (req, res) => {
     try {
       const roleName = req.userRole;
@@ -77,7 +77,7 @@ router.post(
           .eq('system_privileges.privilege_key', 'staff_add_staff')
           .maybeSingle();
 
-        if (!privData || privData.is_enabled !== true) {
+        if (privData && privData.is_enabled === false) {
           return res.status(403).json({ 
             error: `Access denied. Add staff privilege is disabled for your role (${roleName}).` 
           });
@@ -168,63 +168,66 @@ router.post(
             role_id,
             staff_category,
             gender,
-            birthday,
-            joined_date,
+            birthday: birthday || null,
+            joined_date: joined_date || null,
             is_active: true
           })
           .select()
           .single();
 
       if (insertError) {
-        await supabase.auth.admin.deleteUser(authData.user.id);
+        await supabase.auth.admin.deleteUser(authData.user.id).catch(() => {});
         return res.status(400).json({ error: insertError.message });
       }
 
-      const currentYear = leave_year ? parseInt(leave_year, 10) : new Date().getFullYear();
+      // Handle leave balances safely
+      try {
+        const currentYear = leave_year ? parseInt(leave_year, 10) : new Date().getFullYear();
+        const { data: leaveTypes } = await supabase.from('leave_types').select('*');
 
-      const { data: leaveTypes, error: ltError } = await supabase
-        .from('leave_types')
-        .select('*');
+        if (leaveTypes && leaveTypes.length > 0) {
+          const balancesToInsert = leaveTypes.map((lt) => {
+            const typeName = lt.name_en ? lt.name_en.toLowerCase() : '';
+            let allocated = lt.max_days || 0;
+            let used = 0;
 
-      if (!ltError && leaveTypes && leaveTypes.length > 0) {
-        const balancesToInsert = leaveTypes.map((lt) => {
-          const typeName = lt.name_en ? lt.name_en.toLowerCase() : '';
-          let allocated = lt.max_days || 0;
-          let used = 0;
+            if (typeName.includes('casual')) {
+              used = casual_used ? parseFloat(casual_used) : 0;
+            } else if (typeName.includes('medical')) {
+              used = medical_used ? parseFloat(medical_used) : 0;
+            } else if (typeName.includes('short')) {
+              used = short_used ? parseFloat(short_used) : 0;
+            }
 
-          if (typeName.includes('casual')) {
-            used = casual_used ? parseFloat(casual_used) : 0;
-          } else if (typeName.includes('medical')) {
-            used = medical_used ? parseFloat(medical_used) : 0;
-          } else if (typeName.includes('short')) {
-            used = short_used ? parseFloat(short_used) : 0;
-          }
+            const remaining = Math.max(allocated - used, 0);
 
-          const remaining = Math.max(allocated - used, 0);
+            return {
+              user_id: userData.id,
+              leave_type_id: lt.id,
+              year: currentYear,
+              allocated_days: allocated,
+              used_days: used,
+              remaining_days: remaining
+            };
+          });
 
-          return {
-            user_id: userData.id,
-            leave_type_id: lt.id,
-            year: currentYear,
-            allocated_days: allocated,
-            used_days: used,
-            remaining_days: remaining
-          };
-        });
-
-        await supabase.from('user_leave_balances').insert(balancesToInsert);
+          await supabase.from('user_leave_balances').insert(balancesToInsert);
+        }
+      } catch (leaveErr) {
+        console.error('Leave balance assignment warning:', leaveErr);
       }
 
+      // Audit log safely
       await supabase.from('audit_logs').insert([
         {
-          user_id: req.userData?.id,
+          user_id: req.userData?.id || null,
           action: 'STAFF_REGISTERED',
           entity_type: 'users',
           entity_id: userData.id,
           new_value: JSON.stringify({ title, full_name, email }),
           created_at: new Date().toISOString()
         }
-      ]);
+      ]).catch(() => {});
 
       return res.json({
         success: true,
@@ -232,8 +235,8 @@ router.post(
       });
 
     } catch (error) {
-      console.error(error);
-      return res.status(500).json({ error: error.message });
+      console.error('Staff registration error:', error);
+      return res.status(500).json({ error: error.message || 'Internal server error' });
     }
   }
 );

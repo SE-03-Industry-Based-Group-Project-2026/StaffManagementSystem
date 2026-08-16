@@ -5,6 +5,7 @@ import { useLanguage } from '../context/LanguageContext';
 import Layout from '../components/Layout';
 import { PageHero, StatCard, EmptyState, statusBadge } from '../components/PageParts';
 import AppIcon from '../components/AppIcon';
+import SignatureCard from '../components/SignatureCard';
 import toast from 'react-hot-toast';
 import { formatSriLankaDateTime } from '../utils/dateTime';
 
@@ -32,18 +33,23 @@ function Complaints() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selected, setSelected] = useState(null);
   const [note, setNote] = useState('');
+  const [replies, setReplies] = useState([]);
 
   const user = JSON.parse(localStorage.getItem('user') || '{}');
   const role = user?.roles?.role_name || user?.role || user?.role_name || 'Admin';
-  const isPrajaOfficer = role === 'Praja Officer';
+  const roleLower = String(role).toLowerCase().trim();
+  const isDepartmentHead = roleLower === 'department head';
+  const isCcOfficer = roleLower === 'cc officer';
+  const isSecretary = roleLower === 'secretary';
+  const isChairman = roleLower === 'chairman';
+  const isPrajaOfficer = roleLower === 'praja officer';
+  const userDeptId = user?.department_id;
 
   const getAuthHeaders = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token || localStorage.getItem('supabase_token') || '';
-
+    const token = localStorage.getItem('supabase_token') || '';
     return {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`
+      Authorization: token ? `Bearer ${token}` : ''
     };
   };
 
@@ -78,7 +84,6 @@ function Complaints() {
 
   const getLocalizedDepartmentName = (dept) => {
     if (!dept) return '-';
-    
     return isSinhala
       ? (dept.department_name_si || dept.department_name || '-')
       : isTamil
@@ -86,42 +91,25 @@ function Complaints() {
       : (dept.department_name || '-');
   };
 
-  const getLocalizedCategory = (category) => {
-    if (!category) return '-';
-    const c = String(category).trim().toLowerCase();
-    
-    if (c === 'other') return tr('complaint_type_other', 'Other');
-    if (c === 'service') return tr('complaint_type_service', 'Service');
-    if (c === 'corruption') return tr('complaint_type_corruption', 'Corruption');
-    if (c === 'suggestion') return tr('complaint_type_suggestion', 'Suggestion');
-    
-    return category;
-  };
-  
   const getLocalizedStatus = (status) => {
     if (!status) return '-';
-    const s = String(status).trim();
+    const s = String(status).trim().toLowerCase();
     
-    if (s === 'Open') return tr('complaint_status_open', 'Open');
-    if (s === 'In Progress') return tr('complaint_status_in_progress', 'In Progress');
-    if (s === 'Resolved') return tr('complaint_status_resolved', 'Resolved');
-    if (s === 'Closed') return tr('complaint_status_closed', 'Closed');
+    if (s === 'open') return isSinhala ? 'විවෘත' : 'Open';
+    if (s === 'in progress') return isSinhala ? 'ක්‍රියාත්මක වෙමින් පවතී' : 'In Progress';
+    if (s === 'resolved') return isSinhala ? 'විසඳන ලදී' : 'Resolved';
+    if (s === 'closed') return isSinhala ? 'වසා ඇත' : 'Closed';
     
-    return s;
+    return status;
   };
 
   const loadComplaints = async () => {
     try {
       const headers = await getAuthHeaders();
-
-      const res = await fetch(`${API_BASE}/complaints/all`, {
-        headers
-      });
-
+      const res = await fetch(`${API_BASE}/complaints/all`, { headers });
       const data = await res.json();
 
       if (!res.ok) {
-        console.error('Complaints load error:', data);
         toast.error(data.error || tr('failed_to_load_complaints', 'Failed to load complaints'));
         setComplaints([]);
         return;
@@ -134,6 +122,27 @@ function Complaints() {
       setComplaints([]);
     }
   };
+
+  const loadReplies = async (complaintId) => {
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_BASE}/complaints/replies/${complaintId}`, { headers });
+      const data = await res.json();
+      if (res.ok) {
+        setReplies(data || []);
+      }
+    } catch (err) {
+      console.error('Error loading replies/signatures:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (selected?.id) {
+      loadReplies(selected.id);
+    } else {
+      setReplies([]);
+    }
+  }, [selected]);
 
   useEffect(() => {
     if (!location.state?.openId || complaints.length === 0) return;
@@ -149,39 +158,58 @@ function Complaints() {
   }, [location.state, complaints]);
 
   const loadAllDepartments = async () => {
-    const { data, error } = await supabase
-      .from('departments')
-      .select('*')
-      .order('department_name');
+    try {
+      const { data, error } = await supabase
+        .from('departments')
+        .select('*')
+        .order('department_name');
 
-    if (error) {
-      toast.error(error.message);
+      if (error) {
+        toast.error(error.message);
+        setAllDepartments([]);
+        return;
+      }
+
+      let visibleDepartments = data || [];
+      if (isDepartmentHead && userDeptId) {
+        visibleDepartments = visibleDepartments.filter(d => Number(d.id) === Number(userDeptId));
+      } else if (isPrajaOfficer) {
+        visibleDepartments = visibleDepartments.filter(isPrajaDepartment);
+      }
+
+      setAllDepartments(visibleDepartments);
+    } catch (err) {
+      console.error(err);
       setAllDepartments([]);
-      return;
     }
-
-    const visibleDepartments = isPrajaOfficer
-      ? (data || []).filter(isPrajaDepartment)
-      : (data || []);
-
-    setAllDepartments(visibleDepartments);
   };
 
   const filtered = useMemo(() => {
     const keyword = searchTerm.toLowerCase().trim();
 
     return complaints.filter((c) => {
+      if (isDepartmentHead && userDeptId) {
+        if (Number(c.department_id) !== Number(userDeptId)) {
+          return false;
+        }
+      }
+
       const roleMatch = !isPrajaOfficer || isPrajaDepartment(c.departments);
-      const matchStatus = filter === 'all' || String(c.status).toLowerCase() === filter;
+      
+      const cStatus = String(c.status || '').toLowerCase().trim();
+      let matchStatus = true;
+      if (filter !== 'all') {
+        matchStatus = cStatus === filter;
+      }
       
       const deptName = getLocalizedDepartmentName(c.departments);
       const origDeptName = c.departments?.department_name || '';
-      const userName = c.users?.full_name || '';
 
       const matchDept =
+        isDepartmentHead ||
         deptFilter === 'all' ||
         String(c.department_id) === String(deptFilter) ||
-        origDeptName === deptFilter;
+        origDeptName.toLowerCase() === deptFilter.toLowerCase();
 
       const titleText = getLocalizedText(c, 'title');
       const descText = getLocalizedText(c, 'description');
@@ -192,39 +220,49 @@ function Complaints() {
         descText.toLowerCase().includes(keyword) ||
         deptName.toLowerCase().includes(keyword) ||
         origDeptName.toLowerCase().includes(keyword) ||
-        userName.toLowerCase().includes(keyword) ||
-        String(c.status || '').toLowerCase().includes(keyword);
+        cStatus.includes(keyword);
 
       return roleMatch && matchStatus && matchDept && matchSearch;
     });
-  }, [complaints, filter, deptFilter, searchTerm, isPrajaOfficer, activeLanguage]);
+  }, [complaints, filter, deptFilter, searchTerm, isPrajaOfficer, isDepartmentHead, userDeptId, activeLanguage]);
 
   const stats = useMemo(() => {
+    const list = isDepartmentHead && userDeptId 
+      ? complaints.filter(c => Number(c.department_id) === Number(userDeptId))
+      : complaints;
+
     return {
-      total: complaints.length,
-      open: complaints.filter((c) => c.status === 'Open').length,
-      inProgress: complaints.filter((c) => c.status === 'In Progress').length,
-      resolved: complaints.filter((c) => c.status === 'Resolved').length,
-      closed: complaints.filter((c) => c.status === 'Closed').length
+      total: list.length,
+      open: list.filter((c) => String(c.status).toLowerCase() === 'open').length,
+      inProgress: list.filter((c) => String(c.status).toLowerCase() === 'in progress').length,
+      resolved: list.filter((c) => String(c.status).toLowerCase() === 'resolved').length,
+      closed: list.filter((c) => String(c.status).toLowerCase() === 'closed').length
     };
-  }, [complaints]);
+  }, [complaints, isDepartmentHead, userDeptId]);
 
+  const canDepartmentHeadAction = isDepartmentHead && selected?.current_stage === 'department_head';
+  const canCcOfficerAction = isCcOfficer && selected?.current_stage === 'cc_officer';
+  const canSecretaryAction = isSecretary && selected?.current_stage === 'secretary';
+  const canChairmanAction = isChairman && selected?.current_stage === 'chairman';
 
-  const canUpdate = ['Secretary', 'Chairman'].includes(role);
-  const canPrajaNote = role === 'Praja Officer';
-
-  const updateComplaint = async (status) => {
+  const updateComplaint = async (status, forward_to = null) => {
     if (!selected) return;
+
+    const complaintId = selected.id;
+    if (!complaintId) {
+      toast.error('Complaint ID not found!');
+      return;
+    }
 
     try {
       const headers = await getAuthHeaders();
-
-      const res = await fetch(`${API_BASE}/complaints/status/${selected.id}`, {
+      const res = await fetch(`${API_BASE}/complaints/status/${complaintId}`, {
         method: 'PUT',
         headers,
         body: JSON.stringify({
           status,
-          remark: note
+          remark: note,
+          forward_to
         })
       });
 
@@ -245,58 +283,33 @@ function Complaints() {
     }
   };
 
-  const sendPrajaNote = async () => {
-    if (!note.trim()) {
-      toast.error(tr('review_note_required', 'Review note is required'));
-      return;
-    }
-
-    const { data: admins } = await supabase
-      .from('users')
-      .select('id, roles(role_name)')
-      .in('roles.role_name', ['Admin', 'Secretary']);
-
-    const notices = (admins || []).map((a) => ({
-      user_id: a.id,
-      title: t('praja_officer_review_note'),
-      message: `Complaint: ${getLocalizedText(selected, 'title')}. Note: ${note}`,
-      is_auto_generated: true,
-      is_read: false,
-      created_at: new Date().toISOString()
-    }));
-
-    if (notices.length) {
-      await supabase.from('notifications').insert(notices);
-    }
-
-    toast.success(tr('review_note_sent_successfully', 'Review note sent successfully'));
-    setSelected(null);
-    setNote('');
-  };
-
   const getTabLabel = (f) => {
-    if (f === 'all') return t('all');
-    if (f === 'in progress') return t('open_in_progress');
-    if (f === 'resolved') return tr('resolved', 'Resolved');
-    if (f === 'closed') return tr('closed', 'Closed');
+    if (f === 'all') return isSinhala ? 'සියල්ල' : 'All';
+    if (f === 'open') return isSinhala ? 'විවෘත' : 'Open';
+    if (f === 'in progress') return isSinhala ? 'ක්‍රියාත්මක වෙමින් පවතී' : 'In Progress';
+    if (f === 'resolved') return isSinhala ? 'විසඳන ලදී' : 'Resolved';
+    if (f === 'closed') return isSinhala ? 'වසා ඇත' : 'Closed';
     return f;
   };
 
-  const isImageFile = (url) => {
-    if (!url) return false;
-    return /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(url) || url.includes('supabase.co/storage/v1/object/public');
+  const getSignatureForRole = (roleName) => {
+    const foundReply = replies.find(r => {
+      const rRole = String(r.users?.roles?.role_name || '').toLowerCase();
+      return rRole.includes(roleName.toLowerCase()) && r.users?.signature_url;
+    });
+    return foundReply?.users?.signature_url || null;
   };
 
   return (
     <Layout>
-      <PageHero icon="alert" title={t('complaints')} subtitle={t('notifications_subtitle')} />
+      <PageHero icon="alert" title={t('complaints')} subtitle={t('notifications_subtitle') || 'Manage and review system complaints'} />
 
       <div className="pro-grid stats-grid">
-        <StatCard icon="alert" label={t('total_complaints')} value={stats.total} />
-        <StatCard icon="alert" label={tr('open', 'Open')} value={stats.open} />
-        <StatCard icon="clipboard" label={t('open_in_progress')} value={stats.inProgress} />
-        <StatCard icon="check" label={tr('resolved', 'Resolved')} value={stats.resolved} />
-        <StatCard icon="report" label={tr('closed', 'Closed')} value={stats.closed} />
+        <StatCard icon="alert" label={isSinhala ? 'සම්පූර්ණ පැමිණිලි' : 'Total Complaints'} value={stats.total} />
+        <StatCard icon="alert" label={isSinhala ? 'විවෘත' : 'Open'} value={stats.open} />
+        <StatCard icon="clipboard" label={isSinhala ? 'ක්‍රියාත්මක වෙමින් පවතී' : 'In Progress'} value={stats.inProgress} />
+        <StatCard icon="check" label={isSinhala ? 'විසඳන ලදී' : 'Resolved'} value={stats.resolved} />
+        <StatCard icon="report" label={isSinhala ? 'වසා ඇත' : 'Closed'} value={stats.closed} />
       </div>
 
       <div
@@ -312,7 +325,7 @@ function Complaints() {
         }}
       >
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          {['all', 'in progress', 'resolved', 'closed'].map((f) => (
+          {['all', 'open', 'in progress', 'resolved', 'closed'].map((f) => (
             <button
               key={f}
               className={`tab ${filter === f ? 'active' : ''}`}
@@ -323,29 +336,31 @@ function Complaints() {
             </button>
           ))}
 
-          <select
-            value={deptFilter}
-            onChange={(e) => setDeptFilter(e.target.value)}
-            className="tab"
-            style={{
-              backgroundColor: 'var(--bg-secondary, #fff)',
-              color: 'var(--text)',
-              border: '1px solid var(--border)',
-              cursor: 'pointer',
-              padding: '8px 14px',
-              borderRadius: '8px',
-              fontWeight: 500,
-              maxWidth: '240px',
-              textOverflow: 'ellipsis'
-            }}
-          >
-            <option value="all">{t('all_departments') || 'All Departments'}</option>
-            {allDepartments.map((dept) => (
-              <option key={dept.id} value={dept.department_name}>
-                {getLocalizedDepartmentName(dept)}
-              </option>
-            ))}
-          </select>
+          {!isDepartmentHead && (
+            <select
+              value={deptFilter}
+              onChange={(e) => setDeptFilter(e.target.value)}
+              className="tab"
+              style={{
+                backgroundColor: 'var(--bg-secondary, #fff)',
+                color: 'var(--text)',
+                border: '1px solid var(--border)',
+                cursor: 'pointer',
+                padding: '8px 14px',
+                borderRadius: '8px',
+                fontWeight: 500,
+                maxWidth: '240px',
+                textOverflow: 'ellipsis'
+              }}
+            >
+              <option value="all">{t('all_departments') || 'All Departments'}</option>
+              {allDepartments.map((dept) => (
+                <option key={dept.id} value={dept.department_name}>
+                  {getLocalizedDepartmentName(dept)}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div
@@ -380,15 +395,15 @@ function Complaints() {
         <div className="card-head">
           <h3 style={{ color: 'var(--text)' }}>{t('complaints')}</h3>
           <span className="badge badge-neutral">
-            {filtered.length} {t('records')}
+            {filtered.length} {t('records') || 'records'}
           </span>
         </div>
 
         {filtered.length === 0 ? (
           <EmptyState
             icon="alert"
-            title={t('no_complaints')}
-            text={t('there_is_nothing_to_display_yet')}
+            title={t('no_complaints') || 'No complaints found'}
+            text={t('there_is_nothing_to_display_yet') || 'There is nothing to display yet.'}
           />
         ) : (
           <div className="pro-grid">
@@ -425,33 +440,19 @@ function Complaints() {
                       <AppIcon name="calendar" size={13} />{' '}
                       {c.created_at ? formatSriLankaDateTime(c.created_at) : '-'}
                     </span>
-
-                    {c.attachment_url && (
-                      <span className="badge badge-neutral" style={{ color: 'var(--primary, #0066cc)' }}>
-                        <AppIcon name="file" size={13} /> {tr('has_attachment', 'ඇමුණුමක් ඇත')}
-                      </span>
-                    )}
                   </div>
 
                   <button
-                    className={`btn ${c.status === 'Closed' ? 'btn-soft' : 'btn-primary'}`}
-                    disabled={c.status === 'Closed'}
+                    className="btn btn-primary"
                     onClick={() => {
                       setSelected(c);
                       setNote('');
                     }}
                     type="button"
-                    style={{
-                      cursor: c.status === 'Closed' ? 'not-allowed' : 'pointer',
-                      opacity: c.status === 'Closed' ? 0.65 : 1
-                    }}
+                    style={{ cursor: 'pointer' }}
                   >
                     <AppIcon name="search" size={16} />
-                    <span>
-                      {c.status === 'Closed'
-                        ? t('already_completed')
-                        : tr('complaint_details')}
-                    </span>
+                    <span>{tr('complaint_details', 'Review Details')}</span>
                   </button>
                 </div>
               );
@@ -460,140 +461,224 @@ function Complaints() {
         )}
       </div>
 
-      {/* Modal View */}
       {selected && (
         <div className="modal-backdrop" onClick={() => setSelected(null)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ backgroundColor: 'var(--card)', maxWidth: '650px' }}>
-            <div className="modal-head">
-              <h3 style={{ color: 'var(--text)' }}>{tr('review_complaint', 'Review Complaint')}</h3>
-              <button className="btn btn-soft" onClick={() => setSelected(null)} type="button">
-                <AppIcon name="x" />
-              </button>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ backgroundColor: '#ffffff', color: '#1e293b', maxWidth: '850px', width: '95vw', padding: '32px', borderRadius: '12px', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)', maxHeight: '90vh', overflowY: 'auto' }}>
+            
+            <div style={{ textAlign: 'center', borderBottom: '2px solid #8B0000', paddingBottom: '16px', marginBottom: '20px' }}>
+              <h2 style={{ margin: '0 0 4px 0', fontSize: '20px', color: '#8B0000', fontWeight: 800, textTransform: 'uppercase' }}>
+                {tr('pradeshiya_sabha_official_letter', 'වැලිවිටිය දිවිතුර ප්‍රාදේශීය සභාව - නිල පැමිණිලි වාර්තාව හා ලිපිය')}
+              </h2>
+              <p style={{ margin: 0, fontSize: '13px', color: '#64748b' }}>
+                {tr('official_governance_document', 'Official Administrative Correspondence & Escalation Sheet')}
+              </p>
             </div>
 
-            <div className="modal-body" style={{ color: 'var(--text)' }}>
-              <div className="pro-grid" style={{ gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))' }}>
-                <p><b>{t('name_title')}:</b><br />{getLocalizedText(selected, 'title')}</p>
-                <p><b>{t('user')}:</b><br />{selected.users?.full_name || '-'}</p>
-                
-                <p><b>{t('department')}:</b><br />{getLocalizedDepartmentName(selected.departments)}</p>
-                
-                <p><b>{t('complaint_date')}:</b><br />{selected.created_at ? formatSriLankaDateTime(selected.created_at) : '-'}</p>
-                <p>
-                  <b>{t('status')}:</b><br/>
-                  <span className={`badge badge-${selected.status.toLowerCase().replace(/\s/g,'-')}`}>
-                    {getLocalizedStatus(selected.status)}
-                  </span>
-                </p>
-                {selected.category && (
-                  <p>
-                    <b>{tr('category','Category')}:</b><br/>
-                    {getLocalizedCategory(selected.category)}
-                  </p>
-                )}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', fontSize: '14px', marginBottom: '20px', backgroundColor: '#f8fafc', padding: '12px 16px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+              <div><b>{tr('complaint_id', 'Complaint ID')}:</b> #{selected.id}</div>
+              <div><b>{tr('complaint_date', 'Complaint Date')}:</b> {selected.created_at ? formatSriLankaDateTime(selected.created_at) : '-'}</div>
+              <div><b>{tr('user', 'Complainant')}:</b> {selected.users?.full_name || '-'}</div>
+              <div><b>{tr('department', 'Department')}:</b> {getLocalizedDepartmentName(selected.departments)}</div>
+              <div style={{ gridColumn: 'span 2' }}>
+                <b>{tr('status', 'Status')}:</b> <span style={{ color: '#8B0000', fontWeight: 700 }}>{getLocalizedStatus(selected.status)}</span>
               </div>
+            </div>
 
-              <p style={{ marginTop: 16 }}>
-                <b>{t('description')}:</b><br />
+            <div style={{ marginBottom: '24px' }}>
+              <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '8px', textDecoration: 'underline' }}>
+                विषය / Subject: {getLocalizedText(selected, 'title')}
+              </div>
+              <div style={{ fontSize: '14px', lineHeight: '1.6', color: '#334155', whiteSpace: 'pre-wrap', backgroundColor: '#fff', padding: '12px', borderLeft: '4px solid #8B0000' }}>
                 {getLocalizedText(selected, 'description')}
-              </p>
+              </div>
+            </div>
 
-              {selected.attachment_url && (
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
-                  <h4 style={{ color: 'var(--text)', marginTop: 0, marginBottom: 12 }}>
-                    {tr('attachment')}
-                  </h4>
+            {selected.attachment_url && (
+              <div style={{ marginBottom: '20px' }}>
+                <a
+                  href={selected.attachment_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-soft"
+                  style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: '13px' }}
+                >
+                  <AppIcon name="search" size={15} />
+                  <span>{t('open_attachment') || 'View Attachment Document'}</span>
+                </a>
+              </div>
+            )}
 
-                  <div style={{ marginBottom: 12 }}>
-                    <a
-                      href={selected.attachment_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="btn btn-soft"
-                      style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                    >
-                      <AppIcon name="search" size={15} />
-                      <span>{t('open_attachment')}</span>
-                    </a>
-                  </div>
-
-                  {isImageFile(selected.attachment_url) && (
-                    <div style={{ marginTop: 10 }}>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--muted)', marginBottom: 6 }}>
-                        {t('attachment_preview')}:
-                      </p>
-                      <a href={selected.attachment_url} target="_blank" rel="noopener noreferrer">
-                        <img
-                          src={selected.attachment_url}
-                          alt="Attachment Preview"
-                          style={{
-                            maxWidth: '100%',
-                            maxHeight: '300px',
-                            objectFit: 'contain',
-                            borderRadius: '8px',
-                            border: '1px solid var(--border)',
-                            backgroundColor: 'var(--gray-50)',
-                            padding: '4px'
-                          }}
-                        />
-                      </a>
+            <div style={{ marginBottom: '24px' }}>
+              <h4 style={{ fontSize: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', color: '#0f172a' }}>
+                {tr('official_remarks_and_approvals', 'නිල සටහන් හා අනුමත කිරීම් (Audit Trail)')}
+              </h4>
+              
+              {replies.length === 0 ? (
+                <p style={{ fontSize: '13px', color: '#64748b', fontStyle: 'italic' }}>{tr('no_remarks_yet', 'No remarks or progression notes recorded yet.')}</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
+                  {replies.map((rep, idx) => (
+                    <div key={idx} style={{ padding: '10px 14px', backgroundColor: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#1e293b' }}>
+                        {rep.users?.full_name || 'Officer'} <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 'normal' }}>({rep.users?.roles?.role_name || 'Staff'})</span>
+                      </div>
+                      <div style={{ fontSize: '13px', color: '#475569', marginTop: '2px' }}>{rep.reply_message}</div>
+                      <div style={{ fontSize: '10.5px', color: '#94a3b8', marginTop: '4px' }}>{formatSriLankaDateTime(rep.created_at)}</div>
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
+            </div>
 
-              <div className="field" style={{ marginTop: 16 }}>
-                <label style={{ color: 'var(--text)' }}>{t('remarks')}</label>
-                <textarea
-                  className="textarea"
-                  rows="4"
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder={t('enter_remarks')}
-                  style={{
-                    backgroundColor: 'var(--gray-50)',
-                    color: 'var(--text)',
-                    border: '1px solid var(--border)'
-                  }}
-                />
-              </div>
-
-              <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', marginTop: 18, flexWrap: 'wrap' }}>
-                {canPrajaNote && (
-                  <button className="btn btn-primary" onClick={sendPrajaNote} type="button">
-                    {t('save')}
-                  </button>
+            <div style={{ marginBottom: '24px' }}>
+              <h4 style={{ fontSize: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', color: '#0f172a', marginBottom: '14px' }}>
+                {tr('official_signatures', 'නිල අත්සන් (Official Signatures)')}
+              </h4>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
+                
+                {(selected.current_stage === 'department_head' || replies.some(r => r.users?.roles?.role_name === 'Department Head') || getSignatureForRole('Department Head')) && (
+                  <SignatureCard 
+                    title={tr('department_head', 'Department Head')} 
+                    positionKey="Department Head" 
+                    image={getSignatureForRole('Department Head')} 
+                    lang={activeLanguage} 
+                    t={t} 
+                  />
                 )}
 
-                {canUpdate && (
-                  <>
-                    <button
-                      className="btn btn-soft"
-                      onClick={() => updateComplaint('In Progress')}
-                      type="button"
-                    >
-                      {t('mark_in_progress')}
-                    </button>
-
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => updateComplaint('Resolved')}
-                      type="button"
-                    >
-                     {t('mark_resolved')}
-                    </button>
-
-                    <button
-                      className="btn btn-danger"
-                      onClick={() => updateComplaint('Closed')}
-                      type="button"
-                    >
-                     {t('close_complaint')}
-                    </button>
-                  </>
+                {(selected.current_stage === 'cc_officer' || selected.current_stage === 'secretary' || selected.current_stage === 'chairman' || getSignatureForRole('CC Officer')) && (
+                  <SignatureCard 
+                    title={tr('cc_officer', 'CC Officer')} 
+                    positionKey="cc_officer" 
+                    image={getSignatureForRole('CC Officer')} 
+                    lang={activeLanguage} 
+                    t={t} 
+                  />
                 )}
+
+                {(selected.current_stage === 'secretary' || selected.current_stage === 'chairman' || getSignatureForRole('Secretary')) && (
+                  <SignatureCard 
+                    title={tr('secretary', 'Secretary')} 
+                    positionKey="secretary" 
+                    image={getSignatureForRole('Secretary')} 
+                    lang={activeLanguage} 
+                    t={t} 
+                  />
+                )}
+
+                {(selected.current_stage === 'chairman' || getSignatureForRole('Chairman')) && (
+                  <SignatureCard 
+                    title={tr('chairman', 'Chairman')} 
+                    positionKey="chairman" 
+                    image={getSignatureForRole('Chairman')} 
+                    lang={activeLanguage} 
+                    t={t} 
+                  />
+                )}
+
               </div>
             </div>
+
+            <div className="field" style={{ marginBottom: '20px' }}>
+              <label style={{ color: 'var(--text)', fontWeight: 600, fontSize: '13px' }}>{tr('remarks', 'Add Official Remark / Note')}</label>
+              <textarea
+                className="textarea"
+                rows="3"
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder={tr('enter_remarks', 'Type your official remark here before proceeding...')}
+                style={{
+                  backgroundColor: '#f8fafc',
+                  color: '#1e293b',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '8px',
+                  width: '100%',
+                  padding: '10px'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end', flexWrap: 'wrap', borderTop: '1px solid #e2e8f0', paddingTop: '16px' }}>
+              
+              <button className="btn btn-soft" onClick={() => setSelected(null)} type="button">
+                {tr('close', 'Close')}
+              </button>
+
+              {canDepartmentHeadAction && (
+                <>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => updateComplaint('Resolved')}
+                    type="button"
+                    style={{ backgroundColor: '#16a34a', border: 'none' }}
+                  >
+                    {tr('mark_resolved', 'විසඳන ලදී (Resolve Here)')}
+                  </button>
+                  <button
+                    className="btn btn-soft"
+                    onClick={() => updateComplaint('In Progress', 'cc_officer')}
+                    type="button"
+                    style={{ borderColor: '#8B0000', color: '#8B0000' }}
+                  >
+                    {tr('forward_to_cc', 'සම්බන්ධීකරණ නිලධාරී (CC) වෙත යොමු කරන්න')}
+                  </button>
+                </>
+              )}
+
+              {canCcOfficerAction && (
+                <>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => updateComplaint('Resolved')}
+                    type="button"
+                    style={{ backgroundColor: '#16a34a', border: 'none' }}
+                  >
+                    {tr('mark_resolved', 'විසඳන ලදී')}
+                  </button>
+                  <button
+                    className="btn btn-soft"
+                    onClick={() => updateComplaint('In Progress', 'secretary')}
+                    type="button"
+                    style={{ borderColor: '#8B0000', color: '#8B0000' }}
+                  >
+                    {tr('forward_to_secretary', 'ලේකම් වෙත යොමු කරන්න')}
+                  </button>
+                </>
+              )}
+
+              {canSecretaryAction && (
+                <>
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => updateComplaint('Resolved')}
+                    type="button"
+                    style={{ backgroundColor: '#16a34a', border: 'none' }}
+                  >
+                    {tr('mark_resolved', 'විසඳන ලදී')}
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => updateComplaint('In Progress', 'chairman')}
+                    type="button"
+                    style={{ backgroundColor: '#dc2626', border: 'none' }}
+                  >
+                    {tr('forward_to_chairman', 'සභාපති වෙත යොමු කරන්න')}
+                  </button>
+                </>
+              )}
+
+              {canChairmanAction && (
+                <button
+                  className="btn btn-primary"
+                  onClick={() => updateComplaint('Resolved')}
+                  type="button"
+                  style={{ backgroundColor: '#16a34a', border: 'none' }}
+                >
+                  {tr('mark_resolved', 'අවසාන විසඳුම ලබා දෙන්න (Resolve)')}
+                </button>
+              )}
+            </div>
+
           </div>
         </div>
       )}

@@ -85,6 +85,7 @@ function App() {
     'Chairman',
     'CC Officer',
     'Subject Officer',
+    'Department Head',
   ];
 
   const managementRoles = [
@@ -92,7 +93,8 @@ function App() {
     'Secretary',
     'Chairman',
     'CC Officer',
-    'Subject Officer'
+    'Subject Officer',
+    'Department Head'
   ];
 
   const staffManagementRoles = [
@@ -100,7 +102,8 @@ function App() {
     'Subject Officer',
     'Secretary',
     'Chairman',
-    'CC Officer'
+    'CC Officer',
+    'Department Head'
   ];
 
   const profileRoles = [
@@ -108,7 +111,8 @@ function App() {
     'Secretary',
     'Chairman',
     'CC Officer',
-    'Subject Officer'
+    'Subject Officer',
+    'Department Head'
   ];
 
   return (
@@ -157,7 +161,7 @@ function App() {
             path="/departments"
             element={
               <ProtectedRoute
-                allowedRoles={['Admin','Secretary','Chairman','CC Officer','Subject Officer']}
+                allowedRoles={['Admin','Secretary','Chairman','CC Officer','Subject Officer','Department Head']}
               >
                 <DepartmentManagement />
               </ProtectedRoute>
@@ -172,7 +176,8 @@ function App() {
                   'Subject Officer',
                   'Secretary',
                   'Chairman',
-                  'CC Officer'
+                  'CC Officer',
+                  'Department Head'
                 ]}
               >
                 <LeaveTypes />
@@ -188,7 +193,8 @@ function App() {
                   'Subject Officer',
                   'CC Officer',
                   'Secretary',
-                  'Chairman'
+                  'Chairman',
+                  'Department Head'
                 ]}
               >
                 <LeaveRequests />
@@ -294,7 +300,6 @@ function App() {
               </ProtectedRoute>
             }
           />
-
 
           <Route
             path="/"

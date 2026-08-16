@@ -68,10 +68,17 @@ function StaffManagement() {
 
   const isAdmin = currentRole === 'Admin';
   const isSubjectOfficer = currentRole === 'Subject Officer';
-  const canRegisterStaff = isSubjectOfficer || isAdmin;
+  const isDepartmentHead = currentRole === 'Department Head';
+  const canRegisterStaff = isSubjectOfficer || isAdmin || isDepartmentHead;
 
   const staffRoleId = roles.find((r) => r.role_name === 'Staff')?.id || '';
   const [designationsList, setDesignationsList] = useState([]);
+
+  useEffect(() => {
+    if (isDepartmentHead && currentUser?.department_id) {
+      setDeptFilter(String(currentUser.department_id));
+    }
+  }, [isDepartmentHead, currentUser]);
 
   const extractNICDetails = (nicInput) => {
     const nic = nicInput.trim().toUpperCase();
@@ -230,7 +237,7 @@ function StaffManagement() {
       birthday: '',
       joined_date: new Date().toISOString().split('T')[0],
       role_id: '',
-      department_id: '',
+      department_id: isDepartmentHead && currentUser?.department_id ? String(currentUser.department_id) : '',
       leave_records: [
         { year: String(new Date().getFullYear()), casual_used: '0', medical_used: '0', short_used: '0' }
       ]
@@ -245,7 +252,8 @@ function StaffManagement() {
     resetForm();
     setFormData((prev) => ({
       ...prev,
-      role_id: String(staffRoleId)
+      role_id: String(staffRoleId),
+      department_id: isDepartmentHead && currentUser?.department_id ? String(currentUser.department_id) : prev.department_id
     }));
     setEditing(null);
     setShowModal(true);
@@ -464,6 +472,13 @@ function StaffManagement() {
   const filteredStaff = useMemo(() => {
     const keyword = searchTerm.toLowerCase().trim();
     return staff.filter((s) => {
+      // 🌟 Department Head කෙනෙක් නම් තමන්ගේ department එකේ අය පමණක් පෙන්වීම
+      if (isDepartmentHead && currentUser?.department_id) {
+        if (Number(s.department_id) !== Number(currentUser.department_id)) {
+          return false;
+        }
+      }
+
       const matchSearch =
         !keyword ||
         s.nic?.toLowerCase().includes(keyword) ||
@@ -476,7 +491,7 @@ function StaffManagement() {
 
       return matchSearch && matchRole && matchDept;
     });
-  }, [staff, searchTerm, roleFilter, deptFilter]);
+  }, [staff, searchTerm, roleFilter, deptFilter, isDepartmentHead, currentUser]);
 
   if (loading) {
     return (
@@ -515,12 +530,12 @@ function StaffManagement() {
 
         {/* STATS */}
         <div style={styles.statsRow}>
-          <InfoCard icon="users" label={t('total_staff')} value={staff.length} />
-          <InfoCard icon="check" label={t('active')} value={staff.filter((s) => s.is_active).length} tone="success" />
-          <InfoCard icon="alert" label={t('inactive_staff')} value={staff.filter((s) => !s.is_active).length} tone="danger" />
+          <InfoCard icon="users" label={t('total_staff')} value={filteredStaff.length} />
+          <InfoCard icon="check" label={t('active')} value={filteredStaff.filter((s) => s.is_active).length} tone="success" />
+          <InfoCard icon="alert" label={t('inactive_staff')} value={filteredStaff.filter((s) => !s.is_active).length} tone="danger" />
         </div>
 
-        {/* TABLE SECTION */}
+        {/* SECTION CARD WITH MODERN CARDS LAYOUT FOR DEPARTMENT HEAD / GENERAL VIEW */}
         <div style={styles.tableCard}>
           <div style={styles.cardHeader}>
             <div>
@@ -545,13 +560,23 @@ function StaffManagement() {
                   else if (roleKey === 'Secretary') roleKey = 'secretary';
                   else if (roleKey === 'Subject Officer') roleKey = 'subject_officer';
                   else if (roleKey === 'Staff') roleKey = 'staff';
+                  else if (roleKey === 'Department Head') roleKey = 'department_head';
 
                   return (
                     <option key={r.id} value={r.id}>{t(roleKey) || r.role_name}</option>
                   );
                 })}
               </select>
-              <select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)} style={styles.filterSelect}>
+              <select 
+                value={deptFilter} 
+                onChange={(e) => !isDepartmentHead && setDeptFilter(e.target.value)} 
+                style={{
+                  ...styles.filterSelect,
+                  backgroundColor: isDepartmentHead ? 'var(--gray-100)' : 'var(--bg-primary)',
+                  cursor: isDepartmentHead ? 'not-allowed' : 'pointer'
+                }}
+                disabled={isDepartmentHead}
+              >
                 <option value="all">{t('all_departments')}</option>
                 {departments.map((d) => {
                   const deptName = isSinhala
@@ -573,152 +598,128 @@ function StaffManagement() {
               <h3>{t('no_staff_found')}</h3>
             </div>
           ) : (
-            <div style={styles.tableWrapper}>
-              <table style={styles.table}>
-                <thead style={styles.thead}>
-                  <tr>
-                    <th style={styles.th}>{t('nic_no')}</th>
-                    <th style={styles.th}>{t('full_name_gender')}</th>
-                    <th style={styles.th}>{t('email')}</th>
-                    <th style={styles.th}>{t('birthday')}</th>
-                    <th style={styles.th}>{t('joined_date', 'Joined Date')}</th> 
-                    <th style={styles.th}>{t('role_dept')}</th>
-                   {isAdmin && <th style={styles.th}>{t('status')}</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredStaff.map((s) => {
-                    const desigText = isSinhala
-                      ? (s.designations?.designation_si || s.designations?.designation_en || '-')
-                      : isTamil
-                      ? (s.designations?.designation_ta || s.designations?.designation_en || '-')
-                      : (s.designations?.designation_en || '-');
+            /* 🌟 MODERN CARDS GRID VIEW */
+            <div style={styles.staffCardsGrid}>
+              {filteredStaff.map((s) => {
+                const desigText = isSinhala
+                  ? (s.designations?.designation_si || s.designations?.designation_en || '-')
+                  : isTamil
+                  ? (s.designations?.designation_ta || s.designations?.designation_en || '-')
+                  : (s.designations?.designation_en || '-');
 
-                    const deptText = isSinhala
-                      ? (s.departments?.department_name_si || s.departments?.department_name || '-')
-                      : isTamil
-                      ? (s.departments?.department_name_ta || s.departments?.department_name || '-')
-                      : (s.departments?.department_name || '-');
+                const deptText = isSinhala
+                  ? (s.departments?.department_name_si || s.departments?.department_name || '-')
+                  : isTamil
+                  ? (s.departments?.department_name_ta || s.departments?.department_name || '-')
+                  : (s.departments?.department_name || '-');
 
-                    const roleName = s.roles?.role_name;
-                    const isSpecialUser = ['Admin', 'Chairman', 'Secretary', 'CC Officer', 'Subject Officer'].includes(roleName);
+                const roleName = s.roles?.role_name;
+                const isSpecialUser = ['Admin', 'Chairman', 'Secretary', 'CC Officer', 'Subject Officer'].includes(roleName);
 
-                    const cleanEmail = s.email ? s.email.toLowerCase().trim() : '';
-                    let displayName = s.full_name;
+                const cleanEmail = s.email ? s.email.toLowerCase().trim() : '';
+                let displayName = s.full_name;
 
-                    if (cleanEmail === 'admin@pradeshiya.gov.lk') {
-                      displayName = isSinhala ? 'පද්ධති පරිපාලක' : isTamil ? 'கட்டமைப்பு நிர்வாகி' : 'System Administrator';
-                    } else if (cleanEmail === 'ccofficer@pradeshiya.gov.lk') {
-                      displayName = isSinhala ? 'CC නිලධාරී' : isTamil ? 'CC அதிகாரி' : 'CC Officer';
-                    } else if (cleanEmail === 'chairman@pradeshiya.gov.lk') {
-                      displayName = isSinhala ? 'සභාපති' : isTamil ? 'தலைவர்' : 'Chairman';
-                    } else if (cleanEmail === 'secretary@pradeshiya.gov.lk') {
-                      displayName = isSinhala ? 'ලේකම්' : isTamil ? 'செயலாளர்' : 'Secretary';
-                    } else if (cleanEmail === 'subjectofficer@pradeshiya.gov.lk') {
-                      displayName = isSinhala ? 'විෂය භාර නිලධාරී' : isTamil ? 'விடய அதிகாரி' : 'Subject Officer';
-                    }
+                if (cleanEmail === 'admin@pradeshiya.gov.lk') {
+                  displayName = isSinhala ? 'පද්ධති පරිපාලක' : isTamil ? 'கட்டமைப்பு நிர்வாகி' : 'System Administrator';
+                } else if (cleanEmail === 'ccofficer@pradeshiya.gov.lk') {
+                  displayName = isSinhala ? 'CC නිලධාරී' : isTamil ? 'CC அதிகாரி' : 'CC Officer';
+                } else if (cleanEmail === 'chairman@pradeshiya.gov.lk') {
+                  displayName = isSinhala ? 'සභාපති' : isTamil ? 'தலைவர்' : 'Chairman';
+                } else if (cleanEmail === 'secretary@pradeshiya.gov.lk') {
+                  displayName = isSinhala ? 'ලේකම්' : isTamil ? 'செயலாளர்' : 'Secretary';
+                } else if (cleanEmail === 'subjectofficer@pradeshiya.gov.lk') {
+                  displayName = isSinhala ? 'විෂය භාර නිලධාරී' : isTamil ? 'விடய அதிகாரி' : 'Subject Officer';
+                }
 
-                    const isFemale = s.gender === 'Female';
-                    const isMale = s.gender === 'Male';
-                    
-                    const genderKey = isFemale ? 'female' : isMale ? 'male' : 'not_specified';
-                    const genderLabel = isSpecialUser ? (isSinhala ? 'පරිපාලන මණ්ඩලය' : isTamil ? 'நிர்வாகக் குழு' : 'Administrative Panel') : t(genderKey);
+                const isFemale = s.gender === 'Female';
+                const isMale = s.gender === 'Male';
+                const genderKey = isFemale ? 'female' : isMale ? 'male' : 'not_specified';
+                const genderLabel = isSpecialUser ? (isSinhala ? 'පරිපාලන මණ්ඩලය' : isTamil ? 'நிர்வாகக் குழு' : 'Administrative Panel') : t(genderKey);
 
-                    let roleDisplay = roleName || '-';
-                    const cleanRole = String(roleName || '').toLowerCase().trim();
+                let roleDisplay = roleName || '-';
+                const cleanRole = String(roleName || '').toLowerCase().trim();
 
-                    if (isSinhala) {
-                      if (cleanRole.includes('admin')) roleDisplay = 'පරිපාලක';
-                      else if (cleanRole.includes('cc')) roleDisplay = 'සම්බන්ධීකරණ නිලධාරී';
-                      else if (cleanRole.includes('chairman')) roleDisplay = 'සභාපති';
-                      else if (cleanRole.includes('secretary')) roleDisplay = 'ලේකම්';
-                      else if (cleanRole.includes('subject')) roleDisplay = 'විෂය භාර නිලධාරී';
-                      else if (cleanRole.includes('staff')) roleDisplay = 'කාර්ය මණ්ඩලය';
-                    } else if (isTamil) {
-                      if (cleanRole.includes('admin')) roleDisplay = 'நிர்வாகி';
-                      else if (cleanRole.includes('cc')) roleDisplay = 'ஒருங்கிணைப்பாளர்';
-                      else if (cleanRole.includes('chairman')) roleDisplay = 'தலைவர்';
-                      else if (cleanRole.includes('secretary')) roleDisplay = 'செயலாளர்';
-                      else if (cleanRole.includes('subject')) roleDisplay = 'விடய அதிகாரி';
-                      else if (cleanRole.includes('staff')) roleDisplay = 'ஊழியர்';
-                    } else {
-                      let roleKey = roleName;
-                      if (roleKey === 'Admin') roleKey = 'admin';
-                      else if (roleKey === 'CC Officer') roleKey = 'cc_officer';
-                      else if (roleKey === 'Chairman') roleKey = 'chairman';
-                      else if (roleKey === 'Secretary') roleKey = 'secretary';
-                      else if (roleKey === 'Subject Officer') roleKey = 'subject_officer';
-                      else if (roleKey === 'Staff') roleKey = 'staff';
-                      roleDisplay = t(roleKey) || roleName || '-';
-                    }
+                if (isSinhala) {
+                  if (cleanRole.includes('admin')) roleDisplay = 'පරිපාලක';
+                  else if (cleanRole.includes('cc')) roleDisplay = 'සම්බන්ධීකරණ නිලධාරී';
+                  else if (cleanRole.includes('chairman')) roleDisplay = 'සභාපති';
+                  else if (cleanRole.includes('secretary')) roleDisplay = 'ලේකම්';
+                  else if (cleanRole.includes('subject')) roleDisplay = 'විෂය භාර නිලධාරී';
+                  else if (cleanRole.includes('department head')) roleDisplay = 'දෙපාර්තමේන්තු ප්‍රධානී';
+                  else if (cleanRole.includes('staff')) roleDisplay = 'කාර්ය මණ්ඩලය';
+                } else if (isTamil) {
+                  if (cleanRole.includes('admin')) roleDisplay = 'நிர்வாகி';
+                  else if (cleanRole.includes('cc')) roleDisplay = 'ஒருங்கிணைப்பாளர்';
+                  else if (cleanRole.includes('chairman')) roleDisplay = 'தலைவர்';
+                  else if (cleanRole.includes('secretary')) roleDisplay = 'செயலாளர்';
+                  else if (cleanRole.includes('subject')) roleDisplay = 'விடய அதிகாரி';
+                  else if (cleanRole.includes('department head')) roleDisplay = 'திணைக்கள தலைவர்';
+                  else if (cleanRole.includes('staff')) roleDisplay = 'ஊழியர்';
+                } else {
+                  let roleKey = roleName;
+                  if (roleKey === 'Admin') roleKey = 'admin';
+                  else if (roleKey === 'CC Officer') roleKey = 'cc_officer';
+                  else if (roleKey === 'Chairman') roleKey = 'chairman';
+                  else if (roleKey === 'Secretary') roleKey = 'secretary';
+                  else if (roleKey === 'Subject Officer') roleKey = 'subject_officer';
+                  else if (roleKey === 'Staff') roleKey = 'staff';
+                  else if (roleKey === 'Department Head') roleKey = 'department_head';
+                  roleDisplay = t(roleKey) || roleName || '-';
+                }
 
-                    return (
-                      <tr key={s.id} style={styles.tr}>
-                        <td style={styles.td}><strong>{s.nic || '-'}</strong></td>
-                        <td style={styles.td}>
-                          <div style={styles.nameCell}>
-                            {s.avatar_url ? (
-                              <img src={s.avatar_url} alt="Profile" style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
-                            ) : (
-                              <div style={styles.avatar}>{displayName?.charAt(0)?.toUpperCase()}</div>
-                            )}
-                            <div>
-                              <strong style={{ fontSize: '15px' }}>  {s.title ? `${s.title}. ${s.full_name}` : s.full_name}</strong>
-                              <br />
-                              <span style={styles.genderRow}>
-                                <span style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  padding: '2px 8px',
-                                  borderRadius: '12px',
-                                  fontSize: '12px',
-                                  fontWeight: 600,
-                                  backgroundColor: isSpecialUser ? '#e0e7ff' : isFemale ? '#fce7f3' : isMale ? '#dbeafe' : '#f3f4f6',
-                                  color: isSpecialUser ? '#3730a3' : isFemale ? '#db2777' : isMale ? '#2563eb' : '#4b5563',
-                                  marginRight: '6px'
-                                }}>
-                                  <AppIcon 
-                                    name="users" 
-                                    size={13} 
-                                    style={{ marginRight: 4, color: isSpecialUser ? '#3730a3' : isFemale ? '#db2777' : isMale ? '#2563eb' : '#4b5563' }} 
-                                  />
-                                  {genderLabel}
-                                </span>
-                                {!isSpecialUser && (
-                                  <>• <span style={{ color: 'var(--primary)', fontWeight: 600, fontSize: '13px', marginLeft: '6px' }}>{desigText}</span></>
-                                )}
-                              </span>
-                            </div>
-                          </div>
-                        </td>
-                        <td style={styles.td}>{s.email}</td>
-                        <td style={styles.td}>{!isSpecialUser && s.birthday ? new Date(s.birthday).toLocaleDateString() : '-'}</td>
-                        <td style={styles.td}>{s.joined_date ? new Date(s.joined_date).toLocaleDateString() : '-'}</td>
-                        <td style={styles.td}>
-                          <span style={styles.typeBadge}>{roleDisplay}</span>
-                          <br />
-                          {!isSpecialUser && <small style={{ color: 'var(--muted)' }}>{deptText}</small>}
-                        </td>
-                    
-                        {isAdmin && (
-                          <td style={styles.td}>
-                            <button
-                              onClick={() => toggleStatus(s.id, s.is_active)}
-                              style={{
-                                ...styles.statusBtn,
-                                backgroundColor: s.is_active ? colors.success : colors.error
-                              }}
-                              type="button"
-                            >
-                              {s.is_active ? t('active') : t('inactive_staff')}
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                return (
+                  <div key={s.id} style={styles.staffCard}>
+                    <div style={styles.cardTopRow}>
+                      <span style={styles.nicBadge}>{s.nic || 'No NIC'}</span>
+                      <span style={{
+                        ...styles.statusIndicator,
+                        backgroundColor: s.is_active ? '#10b981' : '#ef4444'
+                      }} title={s.is_active ? 'Active' : 'Inactive'} />
+                    </div>
+
+                    <div style={styles.cardProfileInfo}>
+                      {s.avatar_url ? (
+                        <img src={s.avatar_url} alt="Profile" style={styles.cardAvatarImg} />
+                      ) : (
+                        <div style={styles.cardAvatarPlaceholder}>{displayName?.charAt(0)?.toUpperCase()}</div>
+                      )}
+                      <h3 style={styles.cardStaffName}>{s.title ? `${s.title}. ${s.full_name}` : s.full_name}</h3>
+                      <p style={styles.cardStaffDesignation}>{desigText}</p>
+                    </div>
+
+                    <div style={styles.cardDetailsBox}>
+                      <div style={styles.cardDetailRow}>
+                        <AppIcon name="mail" size={14} color="var(--muted)" />
+                        <span style={styles.cardDetailText}>{s.email || '-'}</span>
+                      </div>
+                      <div style={styles.cardDetailRow}>
+                        <AppIcon name="phone" size={14} color="var(--muted)" />
+                        <span style={styles.cardDetailText}>{s.phone || '-'}</span>
+                      </div>
+                      <div style={styles.cardDetailRow}>
+                        <AppIcon name="building" size={14} color="var(--muted)" />
+                        <span style={styles.cardDetailText}>{deptText}</span>
+                      </div>
+                    </div>
+
+                    <div style={styles.cardFooterRow}>
+                      <span style={styles.roleBadgeStyle}>{roleDisplay}</span>
+                      {isAdmin && (
+                        <button
+                          onClick={() => toggleStatus(s.id, s.is_active)}
+                          style={{
+                            ...styles.statusBtn,
+                            backgroundColor: s.is_active ? colors.success : colors.error
+                          }}
+                          type="button"
+                        >
+                          {s.is_active ? t('active') : t('inactive_staff')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
@@ -978,6 +979,8 @@ function StaffManagement() {
                               });
                             }}
                             required
+                            disabled={isDepartmentHead}
+                            style={isDepartmentHead ? { backgroundColor: 'var(--gray-100)', cursor: 'not-allowed' } : {}}
                           >
                             <option value="">{t('select_department_first')}</option>
                             {departments.map((d) => {
@@ -1031,7 +1034,7 @@ function StaffManagement() {
                         </div>
                       </div>
 
-                      {/* 🌟 Multi-Year Leave Records Dynamic Inputs */}
+                      {/* Multi-Year Leave Records Dynamic Inputs */}
                       {!editing && (
                         <div style={{ marginTop: '20px', borderTop: '1px solid var(--border)', paddingTop: '15px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -1206,7 +1209,7 @@ const styles = {
   statIconBox: { width: 56, height: 56, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
   statValue: { fontSize: 24, fontWeight: 700, color: 'var(--text)' },
   statLabel: { fontSize: 13, color: 'var(--muted)', marginTop: 4 },
-  tableCard: { backgroundColor: 'var(--bg-secondary)', borderRadius: 12, margin: '0 24px', border: '1px solid var(--border)' },
+  tableCard: { backgroundColor: 'var(--bg-secondary)', borderRadius: 12, margin: '0 24px', border: '1px solid var(--border)', paddingBottom: '24px' },
   cardHeader: { padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' },
   cardTitle: { fontSize: 18, fontWeight: 600, color: 'var(--text)', margin: 0 },
   cardSubtitle: { margin: '4px 0 0', color: 'var(--muted)', fontSize: 13 },
@@ -1214,19 +1217,27 @@ const styles = {
   searchInput: { padding: '9px 12px', border: '1px solid var(--border)', borderRadius: '6px', backgroundColor: 'var(--bg-primary)', color: 'var(--text)', fontSize: '13.5px', outline: 'none', minWidth: 240 },
   filterSelect: { padding: '9px 12px', border: '1px solid var(--border)', borderRadius: '6px', backgroundColor: 'var(--bg-primary)', color: 'var(--text)', fontSize: '13.5px', outline: 'none', cursor: 'pointer' },
   emptyState: { padding: 50, textAlign: 'center', color: 'var(--muted)' },
-  tableWrapper: { overflowX: 'auto' },
-  table: { width: '100%', borderCollapse: 'collapse' },
-  thead: { backgroundColor: 'var(--gray-50)' },
+  
+  /* 🌟 MODERN STAFF CARDS GRID STYLES */
+  staffCardsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px', padding: '24px' },
+  staffCard: { backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', position: 'relative', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' },
+  cardTopRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' },
+  nicBadge: { fontSize: '11px', fontWeight: 700, color: 'var(--muted)', backgroundColor: 'var(--gray-100)', padding: '2px 8px', borderRadius: '4px' },
+  statusIndicator: { width: '10px', height: '10px', borderRadius: '50%' },
+  cardProfileInfo: { textAlign: 'center', marginBottom: '16px' },
+  cardAvatarImg: { width: '64px', height: '64px', borderRadius: '50%', objectFit: 'cover', margin: '0 auto 10px', border: '2px solid var(--primary)' },
+  cardAvatarPlaceholder: { width: '64px', height: '64px', borderRadius: '50%', backgroundColor: colors.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 700, margin: '0 auto 10px' },
+  cardStaffName: { fontSize: '16px', fontWeight: 700, color: 'var(--text)', margin: '0 0 4px 0' },
+  cardStaffDesignation: { fontSize: '13px', color: 'var(--primary)', fontWeight: 600, margin: 0 },
+  cardDetailsBox: { borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '12px 0', margin: '12px 0', display: 'flex', flexDirection: 'column', gap: '8px' },
+  cardDetailRow: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text)' },
+  cardDetailText: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  cardFooterRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' },
+  roleBadgeStyle: { fontSize: '12px', fontWeight: 600, backgroundColor: 'var(--gray-100)', color: 'var(--text)', padding: '4px 10px', borderRadius: '6px' },
+  statusBtn: { padding: '5px 10px', border: 'none', borderRadius: '6px', color: '#fff', cursor: 'pointer', fontSize: '11px', fontWeight: 600 },
+
   loading: { display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', width: '100%' },
   loadingBox: { display: 'flex', alignItems: 'center', gap: 12, color: 'var(--muted)', fontSize: 14, fontWeight: 600 },
-  th: { padding: '16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: 'var(--text)', borderBottom: '2px solid var(--border)', whiteSpace: 'nowrap' },
-  tr: { borderBottom: '1px solid var(--border)' },
-  td: { padding: '16px', fontSize: '14px', color: 'var(--text)', whiteSpace: 'nowrap' },
-  nameCell: { display: 'flex', alignItems: 'center', gap: 12 },
-  avatar: { width: 40, height: 40, borderRadius: '50%', backgroundColor: colors.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 600, flexShrink: 0 },
-  genderRow: { display: 'flex', alignItems: 'center', color: 'var(--muted)', fontSize: '13.5px', marginTop: '4px' },
-  typeBadge: { padding: '4px 10px', backgroundColor: 'var(--gray-100)', borderRadius: 6, fontSize: 12, color: 'var(--text)', fontWeight: 600 },
-  statusBtn: { padding: '6px 12px', border: 'none', borderRadius: 6, color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600 },
   formSectionBox: { backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: 10, padding: 16 },
   sectionTitle: { fontSize: 14, fontWeight: 700, color: 'var(--primary)', margin: '0 0 12px 0', textTransform: 'uppercase', letterSpacing: '0.5px' },
   gridTwoCols: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 14 },

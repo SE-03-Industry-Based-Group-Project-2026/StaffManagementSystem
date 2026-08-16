@@ -40,6 +40,7 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: error?.message || 'Invalid email or password' });
     }
 
+    // Fetch user profile along with role and department safely
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select(`
@@ -48,18 +49,24 @@ router.post('/login', async (req, res) => {
         departments(department_name, department_type)
       `)
       .eq('auth_id', data.user.id)
-      .single();
+      .maybeSingle();
 
-    if (userError || !userData) {
-      await supabase.auth.admin.signOut(data.session.access_token, 'global');
-      return res.status(404).json({ error: 'Staff profile was not found' });
+    if (userError) {
+      console.error('Database query error during login:', userError);
+      return res.status(500).json({ error: 'Database error querying schema or profile' });
+    }
+
+    if (!userData) {
+      await supabase.auth.admin.signOut(data.session.access_token, 'global').catch(() => {});
+      return res.status(404).json({ error: 'Staff profile was not found. Please ensure your account is linked properly in the database.' });
     }
 
     if (userData.is_active === false) {
-      await supabase.auth.admin.signOut(data.session.access_token, 'global');
+      await supabase.auth.admin.signOut(data.session.access_token, 'global').catch(() => {});
       return res.status(403).json({ error: 'This staff account has been deactivated' });
     }
 
+    // Log user login action safely
     await supabase.from('audit_logs').insert([
       {
         user_id: userData.id,
@@ -68,7 +75,7 @@ router.post('/login', async (req, res) => {
         entity_id: userData.id,
         created_at: new Date().toISOString()
       }
-    ]);
+    ]).catch(err => console.error('Audit log error:', err));
 
     return res.json({
       success: true,
@@ -152,7 +159,7 @@ router.post('/change-password', authenticate, async (req, res) => {
         entity_id: currentUser.id,
         created_at: new Date().toISOString()
       }
-    ]);
+    ]).catch(() => {});
 
     return res.json({ success: true, message: 'Password changed successfully' });
   } catch (error) {
@@ -165,7 +172,7 @@ router.post('/logout', authenticate, async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     if (token) {
-      await supabase.auth.admin.signOut(token, 'global');
+      await supabase.auth.admin.signOut(token, 'global').catch(() => {});
     }
 
     if (req.userData?.id) {
@@ -177,7 +184,7 @@ router.post('/logout', authenticate, async (req, res) => {
           entity_id: req.userData.id,
           created_at: new Date().toISOString()
         }
-      ]);
+      ]).catch(() => {});
     }
 
     return res.json({ success: true, message: 'Logged out successfully' });

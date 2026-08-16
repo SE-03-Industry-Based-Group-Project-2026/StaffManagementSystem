@@ -15,7 +15,7 @@
   "staff": "කාර්ය මණ්ඩලය",
   "staff_members": "කාර්ය මණ්ඩල සාමාජිකයින්",
   "name": "නම",
-  "name_title": "නම / තනතුර",
+  "name_title": "මාතෘකාව",
   "full_name": "සම්පූර්ණ නම",
   "email": "විද්‍යුත් තැපෑල",
   "phone": "දුරකථනය",
@@ -804,5 +804,18 @@
   "audit_update_profile": "පැතිකඩ යාවත්කාලීන කරන ලදී",
   "leave":"නිවාඩු",
   "all_department_members": "සියලුම දෙපාර්තමේන්තු සාමාජිකයින්ට (දෙපාර්තමේන්තු කාර්යය)",
-  "audit_assign_task_multiple": "කාර්ය මණ්ඩලයේ කිහිප දෙනෙකුට කාර්යය පවරන ලදී"
+  "audit_assign_task_multiple": "කාර්ය මණ්ඩලයේ කිහිප දෙනෙකුට කාර්යය පවරන ලදී",
+  "official_remarks_and_approvals": "නිල සටහන් හා අනුමත කිරීම් (විගණන හෝ ඉතිහාස සටහන්)",
+  "no_remarks_yet": "තම තමන්ගේ සටහන් හෝ ප්‍රගති සටහන් කිසිවක් සටහන් වී නැත.",
+  "official_signatures": "නිල අත්සන්",
+  "forward_to_cc": "සම්බන්ධීකරණ නිලධාරී (CC) වෙත යොමු කරන්න",
+  "forward_to_secretary": "ලේකම් වෙත යොමු කරන්න",
+  "forward_to_chairman": "සභාපති වෙත යොමු කරන්න",
+  "pradeshiya_sabha_official_letter": "වැලිවිටිය දිවිතුර ප්‍රාදේශීය සභාව - නිල පැමිණිලි වාර්තාව හා ලිපිය",
+  "official_governance_document": "නිල පරිපාලන ලිපි හුවමාරුව සහ ගැටලු උසස් මට්ටමට යොමු කිරීමේ ලේඛනය",
+  "council_name_full": "වැලිවිටිය දිවිතුර ප්‍රාදේශීය සභාව",
+  "complaint_id": "පැමිණිලි අංකය",
+  "close": "වසන්න",
+  "COMPLAINT_STAGE_UPDATED": "පැමිණිලි තත්ත්වය යාවත්කාලීන විය",
+  "audit_complaint_stage_updated": "පැමිණිලි අදියර යාවත්කාලීන කරන ලදී"
 }

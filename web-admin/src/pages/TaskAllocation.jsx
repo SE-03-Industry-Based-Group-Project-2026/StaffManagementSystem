@@ -59,10 +59,26 @@ function TaskAllocation() {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    assigned_to:[],
+    assigned_to: [],
     department_id: '',
     due_date: ''
   });
+
+  const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+  const loggedInRole =
+    currentUser?.roles?.role_name ||
+    currentUser?.role ||
+    currentUser?.role_name ||
+    '';
+  const loggedInDepartmentId = currentUser?.department_id || '';
+  const isDepartmentHead = loggedInRole === 'Department Head';
+
+  // Department Head කෙනෙක් නම් ඩිපාර්ට්මන්ට් ෆිල්ටර් එක ස්වයංක්‍රීයව ලොක් කිරීම
+  useEffect(() => {
+    if (isDepartmentHead && loggedInDepartmentId) {
+      setSelectedDept(String(loggedInDepartmentId));
+    }
+  }, [isDepartmentHead, loggedInDepartmentId]);
 
   useEffect(() => {
     loadData();
@@ -124,14 +140,6 @@ function TaskAllocation() {
         .select('id, department_name, department_name_si, department_name_ta, department_type')
         .order('department_name');
 
-      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-      const loggedInRole =
-        currentUser?.roles?.role_name ||
-        currentUser?.role ||
-        currentUser?.role_name ||
-        '';
-      const loggedInDepartmentId = currentUser?.department_id || '';
-
       const { data: staffData } = await supabase
         .from('users')
         .select('id, title, full_name, department_id, designations(id, designation_en, designation_si, designation_ta), roles(role_name, role_name_si, role_name_ta), departments(department_name, department_name_si, department_name_ta, department_type)')
@@ -155,7 +163,7 @@ function TaskAllocation() {
 
       if (loggedInRole === 'Praja Officer') {
         filteredDepartments = filteredDepartments.filter(isPrajaDepartment);
-      } else if (loggedInRole === 'Department Head') {
+      } else if (isDepartmentHead) {
         filteredDepartments = filteredDepartments.filter(
           (d) => String(d.id) === String(loggedInDepartmentId)
         );
@@ -173,14 +181,14 @@ function TaskAllocation() {
       setStaff(filteredStaff);
 
       if (
-        loggedInRole === 'Praja Officer' &&
+        (loggedInRole === 'Praja Officer' || isDepartmentHead) &&
         filteredDepartments.length > 0
       ) {
         setFormData((prev) => ({
           ...prev,
           department_id:
             prev.department_id || String(filteredDepartments[0].id),
-          assigned_to: ''
+          assigned_to: []
         }));
       }
     } catch (err) {
@@ -198,27 +206,22 @@ function TaskAllocation() {
   };
 
   const resetForm = () => {
-    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-    const loggedInRole =
-      currentUser?.roles?.role_name ||
-      currentUser?.role ||
-      currentUser?.role_name ||
-      '';
-
     const defaultDepartmentId =
-      loggedInRole === 'Praja Officer' && departments.length > 0
+      (loggedInRole === 'Praja Officer' || isDepartmentHead) && departments.length > 0
         ? String(departments[0].id)
         : '';
 
     setFormData({
       title: '',
       description: '',
-      assigned_to: '',
+      assigned_to: [],
       department_id: defaultDepartmentId,
       due_date: ''
     });
 
-    setSelectedDept('');
+    if (!isDepartmentHead) {
+      setSelectedDept('');
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -288,6 +291,13 @@ function TaskAllocation() {
     const keyword = searchTerm.toLowerCase().trim();
 
     return tasks.filter((task) => {
+      // 🌟 Department Head කෙනෙක් නම් තමන්ගේ department එකේ tasks පමණක් පෙන්වීම
+      if (isDepartmentHead && loggedInDepartmentId) {
+        if (Number(task.department_id) !== Number(loggedInDepartmentId)) {
+          return false;
+        }
+      }
+
       const assignedUser = task.assigned_to_user;
       const formattedAssignedName = formatNameWithPrefix(assignedUser?.title, assignedUser?.full_name).toLowerCase();
 
@@ -302,17 +312,17 @@ function TaskAllocation() {
 
       return titleMatch && deptMatch;
     });
-  }, [tasks, searchTerm, selectedDept]);
+  }, [tasks, searchTerm, selectedDept, isDepartmentHead, loggedInDepartmentId]);
 
   const stats = useMemo(() => {
     return {
-      total: tasks.length,
-      pending: tasks.filter((task) => (task.status || 'Pending') === 'Pending').length,
-      inProgress: tasks.filter((task) => task.status === 'In Progress').length,
-      done: tasks.filter((task) => task.status === 'Done').length,
-      overdue: tasks.filter((task) => isOverdue(task)).length
+      total: filteredTasks.length,
+      pending: filteredTasks.filter((task) => (task.status || 'Pending') === 'Pending').length,
+      inProgress: filteredTasks.filter((task) => task.status === 'In Progress').length,
+      done: filteredTasks.filter((task) => task.status === 'Done').length,
+      overdue: filteredTasks.filter((task) => isOverdue(task)).length
     };
-  }, [tasks]);
+  }, [filteredTasks]);
 
   return (
     <Layout>
@@ -328,7 +338,7 @@ function TaskAllocation() {
             <p style={styles.breadcrumb}>{t('dashboard')} / {t('task_allocation')}</p>
           </div>
 
-          <button className="btn btn-primary" onClick={() => setShowModal(true)} type="button">
+          <button className="btn btn-primary" onClick={() => { resetForm(); setShowModal(true); }} type="button">
             <AppIcon name="plus" size={17} />
             {t('assign')}
           </button>
@@ -355,9 +365,14 @@ function TaskAllocation() {
 
           <select
             className="select"
-            style={styles.filterSelect}
-            onChange={(e) => setSelectedDept(e.target.value)}
+            style={{
+              ...styles.filterSelect,
+              backgroundColor: isDepartmentHead ? 'var(--gray-100)' : 'var(--bg-primary)',
+              cursor: isDepartmentHead ? 'not-allowed' : 'pointer'
+            }}
+            onChange={(e) => !isDepartmentHead && setSelectedDept(e.target.value)}
             value={selectedDept}
+            disabled={isDepartmentHead}
           >
             <option value="">{t('all_departments') || 'All Departments'}</option>
             {departments.map((d) => {
@@ -375,7 +390,7 @@ function TaskAllocation() {
           </select>
         </div>
 
-        <div className="pro-card">
+        <div className="pro-card" style={{ paddingBottom: '24px' }}>
           <div className="card-head">
             <h3>{t('task_allocation')}</h3>
             <span className="badge badge-neutral">
@@ -383,104 +398,84 @@ function TaskAllocation() {
             </span>
           </div>
 
-          <div className="table-wrap">
-            <table className="pro-table" style={{ width: '100%' }}>
-              <thead>
-                <tr>
-                  <th>{t('title') || 'Title'}</th>
-                  <th>{t('staff') || 'Staff'}</th>
-                  <th>{t('department') || 'Department'}</th>
-                  <th>{tr('due_date', 'Due Date')}</th>
-                  <th>{t('status') || 'Status'}</th>
-                  <th>{t('progress') || 'Progress'}</th>
-                </tr>
-              </thead>
+          {filteredTasks.length === 0 ? (
+            <div style={styles.emptyCell}>
+              <AppIcon name="clipboard" size={36} />
+              <div style={{ marginTop: 8 }}>{tr('no_tasks_found', 'No tasks found')}</div>
+            </div>
+          ) : (
+            /* 🌟 MODERN TASK CARDS GRID VIEW */
+            <div style={styles.taskCardsGrid}>
+              {filteredTasks.map((task) => {
+                const deptObj = task.departments;
+                const deptText = deptObj
+                  ? (isSinhala ? (deptObj.department_name_si || deptObj.department_name) : isTamil ? (deptObj.department_name_ta || deptObj.department_name) : deptObj.department_name)
+                  : 'N/A';
 
-              <tbody>
-                {filteredTasks.length === 0 ? (
-                  <tr>
-                    <td colSpan="6" style={styles.emptyCell}>
-                      <AppIcon name="clipboard" size={28} />
-                      <div style={{ marginTop: 8 }}>{tr('no_tasks_found', 'No tasks found')}</div>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredTasks.map((task) => {
-                    const deptObj = task.departments;
-                    const deptText = deptObj
-                      ? (isSinhala ? (deptObj.department_name_si || deptObj.department_name) : isTamil ? (deptObj.department_name_ta || deptObj.department_name) : deptObj.department_name)
-                      : 'N/A';
+                const staffUser = task.assigned_to_user;
+                const formattedStaffName = staffUser ? formatNameWithPrefix(staffUser.title, staffUser.full_name) : 'N/A';
+                const overdue = isOverdue(task);
 
-                    const staffUser = task.assigned_to_user;
-                    const formattedStaffName = staffUser ? formatNameWithPrefix(staffUser.title, staffUser.full_name) : 'N/A';
+                return (
+                  <div key={task.id} style={styles.taskCard}>
+                    <div style={styles.cardTopRow}>
+                      <span style={styles.taskRefBadge}>Task #{task.id}</span>
+                      {getStatusBadge(task.status, overdue)}
+                    </div>
 
-                    return (
-                      <tr key={task.id}>
-                        <td>
-                          <strong>{task.title}</strong>
-                          {task.description && (
-                            <>
-                              <br />
-                              <small style={{ color: 'var(--muted)' }}>{task.description}</small>
-                            </>
-                          )}
-                        </td>
+                    <h3 style={styles.taskTitle}>{task.title}</h3>
+                    {task.description && (
+                      <p style={styles.taskDesc}>{task.description}</p>
+                    )}
 
-                        <td>
-                          {formattedStaffName}
-                          {staffUser?.designations && (
-                            <>
-                              <br />
-                              <small style={{ color: 'var(--muted)' }}>
-                                ({
-                                  isSinhala 
-                                    ? (staffUser.designations.designation_si || staffUser.designations.designation_en)
-                                    : isTamil 
-                                    ? (staffUser.designations.designation_ta || staffUser.designations.designation_en)
-                                    : staffUser.designations.designation_en
-                                })
-                              </small>
-                            </>
-                          )}
-                        </td>
+                    <div style={styles.taskMetaBox}>
+                      <div style={styles.taskMetaRow}>
+                        <AppIcon name="user" size={14} color="var(--muted)" />
+                        <span style={styles.taskMetaText}><strong>{t('staff') || 'Staff'}:</strong> {formattedStaffName}</span>
+                      </div>
+                      <div style={styles.taskMetaRow}>
+                        <AppIcon name="building" size={14} color="var(--muted)" />
+                        <span style={styles.taskMetaText}><strong>{t('department') || 'Dept'}:</strong> {deptText}</span>
+                      </div>
+                      <div style={styles.taskMetaRow}>
+                        <AppIcon name="calendar" size={14} color="var(--muted)" />
+                        <span style={styles.taskMetaText}><strong>{tr('due_date', 'Due Date')}:</strong> {task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}</span>
+                      </div>
+                    </div>
 
-                        <td>{deptText}</td>
-
-                        <td>{task.due_date ? new Date(task.due_date).toLocaleDateString() : '-'}</td>
-                        <td>{getStatusBadge(task.status, isOverdue(task))}</td>
-
-                        <td>
-                          <div style={styles.progressTrack}>
-                            <div
-                              style={{
-                                width: isOverdue(task)
-                                  ? '100%'
-                                  : task.status === 'Done' || task.status === 'Completed'
-                                  ? '100%'
-                                  : task.status === 'In Progress'
-                                  ? '60%'
-                                  : '30%',
-                                backgroundColor: isOverdue(task)
-                                  ? '#dc2626'
-                                  : task.status === 'Done' || task.status === 'Completed'
-                                  ? '#16a34a'
-                                  : task.status === 'In Progress'
-                                  ? '#2563eb'
-                                  : '#ea580c',
-                                height: '100%',
-                                borderRadius: '10px',
-                                transition: 'width 0.4s ease, background-color 0.4s ease'
-                              }}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                    <div style={styles.progressSection}>
+                      <div style={styles.progressLabelRow}>
+                        <span>{t('progress') || 'Progress'}</span>
+                        <span>{overdue ? '100% (Overdue)' : task.status === 'Done' ? '100%' : task.status === 'In Progress' ? '60%' : '30%'}</span>
+                      </div>
+                      <div style={styles.progressTrack}>
+                        <div
+                          style={{
+                            width: overdue
+                              ? '100%'
+                              : task.status === 'Done' || task.status === 'Completed'
+                              ? '100%'
+                              : task.status === 'In Progress'
+                              ? '60%'
+                              : '30%',
+                            backgroundColor: overdue
+                              ? '#dc2626'
+                              : task.status === 'Done' || task.status === 'Completed'
+                              ? '#16a34a'
+                              : task.status === 'In Progress'
+                              ? '#2563eb'
+                              : '#ea580c',
+                            height: '100%',
+                            borderRadius: '10px'
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <AnimatePresence>
@@ -528,30 +523,23 @@ function TaskAllocation() {
                       required
                       value={formData.department_id}
                       onChange={(e) => {
-                        setSelectedDept(e.target.value);
+                        if (!isDepartmentHead) {
+                          setSelectedDept(e.target.value);
+                        }
                         setFormData({
                           ...formData,
                           department_id: e.target.value,
-                          assigned_to: ''
+                          assigned_to: []
                         });
                       }}
+                      disabled={isDepartmentHead}
+                      style={isDepartmentHead ? { backgroundColor: 'var(--gray-100)', cursor: 'not-allowed' } : {}}
                     >
-                      {(() => {
-                        const currentUser = JSON.parse(
-                          localStorage.getItem('user') || '{}'
-                        );
-                        const loggedInRole =
-                          currentUser?.roles?.role_name ||
-                          currentUser?.role ||
-                          currentUser?.role_name ||
-                          '';
-
-                        return loggedInRole !== 'Praja Officer' ? (
-                          <option value="">
-                            {t('select_department') || 'Select Department'}
-                          </option>
-                        ) : null;
-                      })()}
+                      {!isDepartmentHead && (
+                        <option value="">
+                          {t('select_department') || 'Select Department'}
+                        </option>
+                      )}
 
                       {departments.map((d) => {
                         const deptDisplayName = isSinhala
@@ -571,7 +559,6 @@ function TaskAllocation() {
                   <div className="field">
                     <label>{t('staff') || 'Staff'}</label>
                     
-                  
                     <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
                       <input
                         type="checkbox"
@@ -589,7 +576,6 @@ function TaskAllocation() {
                       </label>
                     </div>
 
-                    
                     {formData.assigned_to !== 'all' && (
                       <div style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid var(--border)', padding: '10px', borderRadius: '8px', display: 'grid', gap: '8px' }}>
                         {staff
@@ -761,16 +747,24 @@ const styles = {
     fontWeight: 700,
     display: 'inline-block'
   },
-  progressTrack: {
-    width: '120px',
-    backgroundColor: '#eee',
-    borderRadius: '10px',
-    height: '8px',
-    overflow: 'hidden'
-  },
+  
+  /* 🌟 MODERN TASK CARDS GRID STYLES */
+  taskCardsGrid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px', padding: '24px' },
+  taskCard: { backgroundColor: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '12px', padding: '20px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' },
+  cardTopRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' },
+  taskRefBadge: { fontSize: '11px', fontWeight: 700, color: 'var(--muted)', backgroundColor: 'var(--gray-100)', padding: '2px 8px', borderRadius: '4px' },
+  taskTitle: { fontSize: '16px', fontWeight: 700, color: 'var(--text)', margin: '0 0 6px 0' },
+  taskDesc: { fontSize: '13.5px', color: 'var(--muted)', margin: '0 0 14px 0', lineHeight: 1.4 },
+  taskMetaBox: { borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', padding: '12px 0', margin: '0 0 14px 0', display: 'flex', flexDirection: 'column', gap: '8px' },
+  taskMetaRow: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: 'var(--text)' },
+  taskMetaText: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  progressSection: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  progressLabelRow: { display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 600, color: 'var(--muted)' },
+  progressTrack: { width: '100%', backgroundColor: 'var(--gray-200)', borderRadius: '10px', height: '8px', overflow: 'hidden' },
+
   emptyCell: {
     textAlign: 'center',
-    padding: 32,
+    padding: 50,
     color: 'var(--muted)'
   },
   modalOverlay: {

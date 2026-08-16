@@ -21,6 +21,11 @@ export default function SignatureCard({ title, positionKey, image, lang, t }) {
       en: 'Secretary',
       si: 'ලේකම්',
       ta: 'செயலாளர்'
+    },
+    department_head: {
+      en: 'Department Head',
+      si: 'දෙපාර්තමේන්තු ප්‍රධානී',
+      ta: 'துறைத் தலைவர்'
     }
   };
 

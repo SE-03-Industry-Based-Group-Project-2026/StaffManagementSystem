@@ -39,7 +39,6 @@ function Layout({ children }) {
     }
   });
 
-  // Fetch latest user details (including fresh avatar_url) from Database
   const fetchLatestUserData = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -68,7 +67,7 @@ function Layout({ children }) {
       try {
         const updatedUser = JSON.parse(localStorage.getItem('user') || '{}');
         setUser(updatedUser);
-        fetchLatestUserData(); // Refetch from DB to ensure sync
+        fetchLatestUserData();
       } catch (err) {
         console.error('Error updating user state:', err);
       }
@@ -251,6 +250,7 @@ function Layout({ children }) {
       if (rawRole.includes('chairman')) return 'සභාපති';
       if (rawRole.includes('secretary')) return 'ලේකම්';
       if (rawRole.includes('subject')) return 'විෂය භාර නිලධාරී';
+      if (rawRole.includes('department head')) return 'දෙපාර්තමේන්තු ප්‍රධානී';
       if (rawRole.includes('staff')) return 'කාර්ය මණ්ඩලය';
     } else if (isTamil) {
       if (rawRole.includes('admin')) return 'நிர்வாகி';
@@ -258,18 +258,27 @@ function Layout({ children }) {
       if (rawRole.includes('chairman')) return 'தலைவர்';
       if (rawRole.includes('secretary')) return 'செயலாளர்';
       if (rawRole.includes('subject')) return 'விடய அதிகாரி';
+      if (rawRole.includes('department head')) return 'திணைக்கள தலைவர்';
       if (rawRole.includes('staff')) return 'ஊழியர்';
     }
 
     return userObj?.roles?.role_name || userObj?.role || userObj?.role_name || 'Admin';
   };
 
-  const role = String(user.role || user.role_name || user.roles?.role_name || 'Admin').trim();
+  const getSafeRole = (userObj) => {
+    if (!userObj) return 'Admin';
+    if (typeof userObj.roles === 'string') return userObj.roles;
+    if (userObj.roles?.role_name) return userObj.roles.role_name;
+    if (userObj.role) return userObj.role;
+    if (userObj.role_name) return userObj.role_name;
+    return 'Admin';
+  };
+
+  const role = String(getSafeRole(user)).trim();
   const isAdmin = role.toLowerCase() === 'admin';
   const roleLower = role.toLowerCase();
   
-  const isManagementRole = ['chairman', 'secretary', 'subject officer', 'cc officer'].includes(roleLower);
-  const isChairmanOrSecretary = ['chairman', 'secretary'].includes(roleLower);
+  const isManagementRole = ['chairman', 'secretary', 'subject officer', 'cc officer', 'department head'].includes(roleLower);
 
   const tr = (key, fallback) => {
     const value = t(key);
@@ -337,7 +346,7 @@ function Layout({ children }) {
             </button>
           )}
 
-          {!isAdmin && (
+          {!isAdmin && roleLower !== 'department head' && (
             <div className="menu-group">
               <button
                 type="button"
@@ -367,17 +376,17 @@ function Layout({ children }) {
             </button>
           )}
 
-          {isChairmanOrSecretary && (
-            <>
-              <button className={location.pathname === '/complaints' ? 'active' : ''} onClick={() => navigate('/complaints')} type="button">
-                <AppIcon name="alert" size={19} /><span>{tr('complaints', 'Complaints')}</span>
-              </button>
-              <button className={location.pathname === '/tasks' ? 'active' : ''} onClick={() => navigate('/tasks')} type="button">
-                <AppIcon name="clipboard" size={19} /><span>{tr('task_allocation', 'Task Allocation')}</span>
-              </button>
-            </>
+          {roleLower !== 'admin' && roleLower !== 'subject officer' && (
+            <button className={location.pathname === '/complaints' ? 'active' : ''} onClick={() => navigate('/complaints')} type="button">
+              <AppIcon name="alert" size={19} /><span>{tr('complaints', 'Complaints')}</span>
+            </button>
           )}
 
+          {(roleLower === 'chairman' || roleLower === 'secretary' || roleLower === 'department head') && (
+            <button className={location.pathname === '/tasks' ? 'active' : ''} onClick={() => navigate('/tasks')} type="button">
+              <AppIcon name="clipboard" size={19} /><span>{tr('task_allocation', 'Task Allocation')}</span>
+            </button>
+          )}
           {isManagementRole && (
             <button className={location.pathname === '/reports' ? 'active' : ''} onClick={() => navigate('/reports')} type="button">
               <AppIcon name="report" size={19} /> <span>{tr('reports', 'Reports')}</span>

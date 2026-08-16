@@ -15,7 +15,7 @@
   "staff": "Staff",
   "staff_members": "Staff Members",
   "name": "Name",
-  "name_title": "Name / Title",
+  "name_title": "Topic",
   "full_name": "Full Name",
   "email": "Email",
   "phone": "Phone",
@@ -805,5 +805,17 @@
   "audit_update_profile": "Profile Updated",
   "leave":"Leave",
   "all_department_members": "All Department Members (Department Task)",
-  "audit_assign_task_multiple": "Assigned task to multiple staff"
+  "audit_assign_task_multiple": "Assigned task to multiple staff",
+  "official_remarks_and_approvals": "Official Remarks & Approvals (Audit Trail)",
+  "no_remarks_yet": "No remarks or progression notes recorded yet.",
+  "official_signatures": "Official Signatures",
+  "forward_to_cc": "Forward to CC Officer",
+  "forward_to_secretary": "Forward to Secretary",
+  "forward_to_chairman": "Forward to Chairman",
+  "pradeshiya_sabha_official_letter": "Walivitiya Divithura Pradeshiya Sabha - Official Complaint Report & Letter",
+  "official_governance_document": "Official Administrative Correspondence and Escalation Document",
+  "council_name_full": "Walivitiya Divithura Pradeshiya Sabha",
+  "complaint_id": "Complaint ID",
+  "close": "Close",
+  "audit_complaint_stage_updated": "Complaint Stage Updated"
 }

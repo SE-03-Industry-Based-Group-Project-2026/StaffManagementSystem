@@ -30,26 +30,6 @@ async function getCurrentUser(authId) {
   return data;
 }
 
-async function getUserById(id) {
-  const { data, error } = await supabase
-    .from('users')
-    .select(`
-      id,
-      full_name,
-      email,
-      department_id,
-      designations(designation_en, designation_si, designation_ta),
-      is_active,
-      roles(role_name),
-      departments(department_name, department_name_si, department_name_ta, department_type)
-    `)
-    .eq('id', id)
-    .single();
-
-  if (error || !data) return null;
-  return data;
-}
-
 async function getDepartmentById(id) {
   const { data, error } = await supabase
     .from('departments')
@@ -73,6 +53,11 @@ function isDepartmentAllowedForRole(assigner, department) {
     return true;
   }
 
+  // 🌟 Department Head කෙනෙක් නම් තමන්ගේම ඩිපාර්ට්මන්ට් එකට පමණක් අවසර දීම
+  if (role === 'department head') {
+    return Number(assigner.department_id) === Number(department.id);
+  }
+
   const departmentType = normalizeText(department?.department_type);
   if (role === 'praja officer') {
     return ['library', 'preschool'].includes(departmentType);
@@ -81,12 +66,8 @@ function isDepartmentAllowedForRole(assigner, department) {
   return false;
 }
 
-function canAssignTask(assigner, assignee, department) {
-  if (!assigner || !assignee || !department) return false;
-
-  if (Number(assignee.department_id) !== Number(department.id)) return false;
-  if (assignee.is_active === false) return false;
-
+function canAssignTask(assigner, department) {
+  if (!assigner || !department) return false;
   return isDepartmentAllowedForRole(assigner, department);
 }
 
@@ -126,9 +107,15 @@ router.post(
       if (!assigner) return res.status(404).json({ error: 'Assigner not found' });
       if (!department) return res.status(404).json({ error: 'Department not found' });
 
+      // 🌟 මෙහිදී assigner ට මෙම දෙපාර්තමේන්තුවට ටාස්ක් පැවරීමට ඇති අවසරය පරීක්ෂා කිරීම
+      if (!canAssignTask(assigner, department)) {
+        return res.status(403).json({ 
+          error: 'Access denied. You can only assign tasks to your own department or you do not have permission for this department.' 
+        });
+      }
+
       let targetStaffList = [];
 
-    
       if (assigned_to === 'all' || !assigned_to || (Array.isArray(assigned_to) && assigned_to.length === 0)) {
         const { data: deptStaff } = await supabase
           .from('users')
@@ -138,7 +125,6 @@ router.post(
 
         targetStaffList = deptStaff || [];
       } 
-      
       else if (Array.isArray(assigned_to)) {
         const { data: specificStaff } = await supabase
           .from('users')
@@ -149,7 +135,6 @@ router.post(
 
         targetStaffList = specificStaff || [];
       } 
-    
       else {
         const { data: singleStaff } = await supabase
           .from('users')
@@ -163,7 +148,7 @@ router.post(
       }
 
       if (targetStaffList.length === 0) {
-        return res.status(400).json({ error: 'No valid active staff found to assign tasks.' });
+        return res.status(400).json({ error: 'No valid active staff found to assign tasks in this department.' });
       }
 
       const translatedTitle = await translateToAllLanguages(cleanTitle);
@@ -171,7 +156,6 @@ router.post(
         ? await translateToAllLanguages(cleanDescription)
         : { en: '', si: '', ta: '' };
 
-     
       const tasksToInsert = targetStaffList.map(staffMember => ({
         title: translatedTitle.en,
         description: translatedDescription.en,
@@ -197,7 +181,6 @@ router.post(
 
       if (insertError) return res.status(400).json({ error: insertError.message });
 
-  
       const notificationPromises = targetStaffList.map(staffMember => 
         createNotification({
           userId: staffMember.id,
@@ -247,7 +230,7 @@ router.get(
       const currentUser = await getCurrentUser(req.user.id);
       if (!currentUser) return res.status(404).json({ error: 'User not found' });
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('tasks')
         .select(`
           *,
@@ -264,6 +247,14 @@ router.get(
           departments(department_name, department_name_si, department_name_ta, department_type)
         `)
         .order('created_at', { ascending: false });
+
+      // 🌟 Department Head කෙනෙක් නම්, තමන්ගේ ඩිපාර්ට්මන්ට් එකට අදාළ ටාස්ක් පමණක් පෙන්වීම (Optional & Secure)
+      const roleName = normalizeText(currentUser.roles?.role_name);
+      if (roleName === 'department head' && currentUser.department_id) {
+        query = query.eq('department_id', currentUser.department_id);
+      }
+
+      const { data, error } = await query;
 
       if (error) return res.status(400).json({ error: error.message });
 
