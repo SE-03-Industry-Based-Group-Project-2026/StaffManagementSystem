@@ -5,9 +5,9 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Middleware - CORS properly configured once
+// CORS properly configured to allow both localhost and your Azure VM Public IP
 app.use(cors({
-    origin: 'http://localhost:3000',
+    origin: ['http://localhost:3000', 'http://20.204.15.77:3000'],
     credentials: true
 }));
 
@@ -24,10 +24,9 @@ const notificationRoutes = require('./routes/notifications');
 const reportRoutes = require('./routes/reports');
 const auditRoutes = require('./routes/audit');
 const taskRoutes = require('./routes/tasks');
-const privilegeRoutes = require('./routes/privileges'); 
+const privilegeRoutes = require('./routes/privileges');
 const departmentRoutes = require('./routes/departments');
 const profileRoutes = require('./routes/profile');
-
 
 // Use routes
 app.use('/api/auth', authRoutes);
@@ -39,13 +38,13 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/tasks', taskRoutes);
-app.use('/api/privileges', privilegeRoutes); 
+app.use('/api/privileges', privilegeRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/profile', profileRoutes);
 
 // Health check
 app.get('/', (req, res) => {
-    res.json({ 
+    res.json({
         message: 'Pradeshiya Sabha Staff Management API',
         status: 'Running',
         time: new Date().toISOString()
@@ -56,7 +55,5 @@ const initNotificationCleanup = require('./services/cleanup');
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`✅ Server running on port ${PORT}`);
-    console.log(`📍 http://localhost:${PORT}`);
-    initNotificationCleanup();
+    console.log(`Server running on port ${PORT}`);
 });
