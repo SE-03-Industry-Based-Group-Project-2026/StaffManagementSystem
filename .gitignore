@@ -1,3 +1,7 @@
 node_modules/
+.env
 backend/.env
 backend/node_modules/
+web-admin/.env
+web-admin/node_modules/
+updated_database.sql
