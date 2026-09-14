@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
+const WebSocket = require('ws'); 
 const supabase = require('../config/supabase');
 const { authenticate } = require('../middleware/auth');
 
@@ -17,6 +18,9 @@ function createAuthClient() {
       persistSession: false,
       autoRefreshToken: false,
       detectSessionInUrl: false
+    },
+    realtime: {
+      transport: WebSocket 
     }
   });
 }
@@ -69,7 +73,6 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ error: 'This staff account has been deactivated' });
     }
 
-    // Safely log user login action without using .catch()
     try {
       await supabase.from('audit_logs').insert([
         {
