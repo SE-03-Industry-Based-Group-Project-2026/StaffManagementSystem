@@ -40,7 +40,6 @@ router.post('/login', async (req, res) => {
       return res.status(401).json({ error: error?.message || 'Invalid email or password' });
     }
 
-    // Fetch user profile along with role and department safely
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select(`
@@ -57,25 +56,33 @@ router.post('/login', async (req, res) => {
     }
 
     if (!userData) {
-      await supabase.auth.admin.signOut(data.session.access_token, 'global').catch(() => {});
+      try {
+        await supabase.auth.admin.signOut(data.session.access_token, 'global');
+      } catch (e) {}
       return res.status(404).json({ error: 'Staff profile was not found. Please ensure your account is linked properly in the database.' });
     }
 
     if (userData.is_active === false) {
-      await supabase.auth.admin.signOut(data.session.access_token, 'global').catch(() => {});
+      try {
+        await supabase.auth.admin.signOut(data.session.access_token, 'global');
+      } catch (e) {}
       return res.status(403).json({ error: 'This staff account has been deactivated' });
     }
 
-    // Log user login action safely
-    await supabase.from('audit_logs').insert([
-      {
-        user_id: userData.id,
-        action: 'USER_LOGIN',
-        entity_type: 'users',
-        entity_id: userData.id,
-        created_at: new Date().toISOString()
-      }
-    ]).catch(err => console.error('Audit log error:', err));
+    // Safely log user login action without using .catch()
+    try {
+      await supabase.from('audit_logs').insert([
+        {
+          user_id: userData.id,
+          action: 'USER_LOGIN',
+          entity_type: 'users',
+          entity_id: userData.id,
+          created_at: new Date().toISOString()
+        }
+      ]);
+    } catch (err) {
+      console.error('Audit log error:', err);
+    }
 
     return res.json({
       success: true,
@@ -151,15 +158,19 @@ router.post('/change-password', authenticate, async (req, res) => {
       return res.status(400).json({ error: updateError.message });
     }
 
-    await supabase.from('audit_logs').insert([
-      {
-        user_id: currentUser.id,
-        action: 'CHANGE_PASSWORD',
-        entity_type: 'users',
-        entity_id: currentUser.id,
-        created_at: new Date().toISOString()
-      }
-    ]).catch(() => {});
+    try {
+      await supabase.from('audit_logs').insert([
+        {
+          user_id: currentUser.id,
+          action: 'CHANGE_PASSWORD',
+          entity_type: 'users',
+          entity_id: currentUser.id,
+          created_at: new Date().toISOString()
+        }
+      ]);
+    } catch (err) {
+      console.error('Audit log error:', err);
+    }
 
     return res.json({ success: true, message: 'Password changed successfully' });
   } catch (error) {
@@ -172,19 +183,23 @@ router.post('/logout', authenticate, async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     if (token) {
-      await supabase.auth.admin.signOut(token, 'global').catch(() => {});
+      try {
+        await supabase.auth.admin.signOut(token, 'global');
+      } catch (e) {}
     }
 
     if (req.userData?.id) {
-      await supabase.from('audit_logs').insert([
-        {
-          user_id: req.userData.id,
-          action: 'USER_LOGOUT',
-          entity_type: 'users',
-          entity_id: req.userData.id,
-          created_at: new Date().toISOString()
-        }
-      ]).catch(() => {});
+      try {
+        await supabase.from('audit_logs').insert([
+          {
+            user_id: req.userData.id,
+            action: 'USER_LOGOUT',
+            entity_type: 'users',
+            entity_id: req.userData.id,
+            created_at: new Date().toISOString()
+          }
+        ]);
+      } catch (err) {}
     }
 
     return res.json({ success: true, message: 'Logged out successfully' });
