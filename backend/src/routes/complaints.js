@@ -107,9 +107,6 @@ router.post(
 /*
  * Get all permitted complaints based on role and stage
  */
-/*
- * Get all permitted complaints based on role and stage
- */
 router.get(
   '/all',
   authenticate,
@@ -143,9 +140,10 @@ router.get(
         `)
         .order('created_at', { ascending: false });
       
-      // රෝල් එක අනුව පෙන්වන අවධීන් (Stages) නිවැරදි කිරීම
-      if (role === 'Department Head' && currentUser.department_id) {
-        query = query.eq('department_id', currentUser.department_id).eq('current_stage', 'department_head');
+      
+      if (role === 'Department Head') {
+        const deptId = currentUser.department_id || 6;
+        query = query.eq('department_id', deptId);
       } else if (role === 'CC Officer') {
         query = query.eq('current_stage', 'cc_officer');
       } else if (role === 'Secretary') {
@@ -168,9 +166,8 @@ router.get(
     }
   }
 );
-
 /*
- * Update complaint status and multi-stage forwarding with notifications
+ * Update complaint status and multi-stage forwarding with notifications & signatures
  */
 router.put(
   '/status/:id',
@@ -206,7 +203,6 @@ router.put(
         else if (forward_to === 'chairman') nextStage = 'chairman';
       }
 
-      // ඩේටාබේස් එක අප්ඩේට් කිරීම
       const { data, error } = await supabase
         .from('complaints')
         .update({ 
@@ -220,10 +216,9 @@ router.put(
 
       if (error) return res.status(400).json({ error: error.message });
 
-      // රෙමාර්ක් සහ අත්සන සහිතව Reply එකක් සේව් කිරීම (Signature display සඳහා වැදගත් වේ)
       const cleanRemark = String(remark || '').trim();
       const translatedRemark = cleanRemark ? await translateToAllLanguages(cleanRemark) : { en: '', si: '', ta: '' };
-      
+
       await supabase
         .from('complaint_replies')
         .insert([
@@ -238,13 +233,12 @@ router.put(
           }
         ]);
 
-      // ඊළඟ ස්ටේජ් එකට අදාළ නිලධාරියා සොයා නොටිෆිකේෂන් යැවීම
       let targetRoleName = '';
       if (nextStage === 'cc_officer') targetRoleName = 'CC Officer';
       else if (nextStage === 'secretary') targetRoleName = 'Secretary';
       else if (nextStage === 'chairman') targetRoleName = 'Chairman';
 
-      let targetUserId = complaint.user_id; // ඩිෆෝල්ට් ලෙස පැමිණිලිකරුට
+      let targetUserId = complaint.user_id;
 
       if (targetRoleName) {
         const { data: nextUser } = await supabase
@@ -284,90 +278,8 @@ router.put(
 );
 
 /*
- * Update complaint status and multi-stage forwarding
+ * Get replies and signatures for a specific complaint
  */
-
-router.put(
-  '/status/:id',
-  authenticate,
-  async (req, res) => {
-    try {
-      const { id } = req.params;
-      const { status, remark, forward_to } = req.body;
-
-      const currentUser = await getCurrentUser(req.user);
-      if (!currentUser) return res.status(404).json({ error: 'User not found' });
-
-     
-      const { data: complaint, error: complaintError } = await supabase
-        .from('complaints')
-        .select('*')
-        .eq('id', id)
-        .maybeSingle();
-
-      if (complaintError || !complaint) {
-        console.error('Find complaint error:', complaintError);
-        return res.status(404).json({ error: 'Complaint not found' });
-      }
-
-      let nextStatus = status;
-      let nextStage = complaint.current_stage;
-
-      if (status === 'Resolved' || status === 'Closed') {
-        nextStatus = status;
-        nextStage = 'completed';
-      } else if (status === 'In Progress') {
-        nextStatus = 'In Progress';
-        if (forward_to === 'cc_officer') nextStage = 'cc_officer';
-        else if (forward_to === 'secretary') nextStage = 'secretary';
-        else if (forward_to === 'chairman') nextStage = 'chairman';
-      }
-
-      // ඩේටාබේස් එක අප්ඩේට් කිරීම
-      const { data, error } = await supabase
-        .from('complaints')
-        .update({ 
-          status: nextStatus, 
-          current_stage: nextStage,
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', complaint.id)
-        .select()
-        .single();
-
-      if (error) {
-        console.error('Update complaint error:', error.message);
-        return res.status(400).json({ error: error.message });
-      }
-
-      // රෙමාර්ක් එකක් ඇත්නම් එය සේව් කිරීම
-      const cleanRemark = String(remark || '').trim();
-      if (cleanRemark) {
-        const translatedRemark = await translateToAllLanguages(cleanRemark);
-        await supabase
-          .from('complaint_replies')
-          .insert([
-            {
-              complaint_id: complaint.id,
-              replied_by: currentUser.id,
-              reply_message: translatedRemark.en,
-              reply_message_en: translatedRemark.en,
-              reply_message_si: translatedRemark.si,
-              reply_message_ta: translatedRemark.ta,
-              created_at: new Date().toISOString()
-            }
-          ]);
-      }
-
-      return res.json({ success: true, data });
-    } catch (error) {
-      console.error('Update complaint status route error:', error);
-      return res.status(500).json({ error: error.message });
-    }
-  }
-);
-
-
 router.get(
   '/replies/:complaint_id',
   authenticate,
@@ -378,7 +290,14 @@ router.get(
 
       const { data, error } = await supabase
         .from('complaint_replies')
-        .select(`*, users(full_name)`)
+        .select(`
+          *,
+          users(
+            full_name,
+            signature_url,
+            roles(role_name)
+          )
+        `)
         .eq('complaint_id', lookupId)
         .order('created_at', { ascending: true });
 

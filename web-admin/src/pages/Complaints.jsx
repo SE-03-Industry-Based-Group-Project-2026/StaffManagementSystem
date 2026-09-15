@@ -5,7 +5,6 @@ import { useLanguage } from '../context/LanguageContext';
 import Layout from '../components/Layout';
 import { PageHero, StatCard, EmptyState, statusBadge } from '../components/PageParts';
 import AppIcon from '../components/AppIcon';
-import SignatureCard from '../components/SignatureCard';
 import toast from 'react-hot-toast';
 import { formatSriLankaDateTime } from '../utils/dateTime';
 
@@ -132,7 +131,7 @@ function Complaints() {
         setReplies(data || []);
       }
     } catch (err) {
-      console.error('Error loading replies/signatures:', err);
+      console.error('Error loading replies:', err);
     }
   };
 
@@ -171,8 +170,9 @@ function Complaints() {
       }
 
       let visibleDepartments = data || [];
-      if (isDepartmentHead && userDeptId) {
-        visibleDepartments = visibleDepartments.filter(d => Number(d.id) === Number(userDeptId));
+      if (isDepartmentHead && (userDeptId || 6)) {
+        const targetId = userDeptId || 6;
+        visibleDepartments = visibleDepartments.filter(d => Number(d.id) === Number(targetId));
       } else if (isPrajaOfficer) {
         visibleDepartments = visibleDepartments.filter(isPrajaDepartment);
       }
@@ -188,8 +188,9 @@ function Complaints() {
     const keyword = searchTerm.toLowerCase().trim();
 
     return complaints.filter((c) => {
-      if (isDepartmentHead && userDeptId) {
-        if (Number(c.department_id) !== Number(userDeptId)) {
+      if (isDepartmentHead) {
+        const targetDeptId = userDeptId || 6;
+        if (Number(c.department_id) !== Number(targetDeptId)) {
           return false;
         }
       }
@@ -199,7 +200,7 @@ function Complaints() {
       const cStatus = String(c.status || '').toLowerCase().trim();
       let matchStatus = true;
       if (filter !== 'all') {
-        matchStatus = cStatus === filter;
+        matchStatus = cStatus === String(filter).toLowerCase().trim();
       }
       
       const deptName = getLocalizedDepartmentName(c.departments);
@@ -227,23 +228,24 @@ function Complaints() {
   }, [complaints, filter, deptFilter, searchTerm, isPrajaOfficer, isDepartmentHead, userDeptId, activeLanguage]);
 
   const stats = useMemo(() => {
-    const list = isDepartmentHead && userDeptId 
-      ? complaints.filter(c => Number(c.department_id) === Number(userDeptId))
+    const targetDeptId = userDeptId || 6;
+    const list = isDepartmentHead 
+      ? complaints.filter(c => Number(c.department_id) === Number(targetDeptId))
       : complaints;
 
     return {
       total: list.length,
-      open: list.filter((c) => String(c.status).toLowerCase() === 'open').length,
-      inProgress: list.filter((c) => String(c.status).toLowerCase() === 'in progress').length,
-      resolved: list.filter((c) => String(c.status).toLowerCase() === 'resolved').length,
-      closed: list.filter((c) => String(c.status).toLowerCase() === 'closed').length
+      open: list.filter((c) => String(c.status).toLowerCase().trim() === 'open').length,
+      inProgress: list.filter((c) => String(c.status).toLowerCase().trim() === 'in progress').length,
+      resolved: list.filter((c) => String(c.status).toLowerCase().trim() === 'resolved').length,
+      closed: list.filter((c) => String(c.status).toLowerCase().trim() === 'closed').length
     };
   }, [complaints, isDepartmentHead, userDeptId]);
 
-  const canDepartmentHeadAction = isDepartmentHead && selected?.current_stage === 'department_head';
-  const canCcOfficerAction = isCcOfficer && selected?.current_stage === 'cc_officer';
-  const canSecretaryAction = isSecretary && selected?.current_stage === 'secretary';
-  const canChairmanAction = isChairman && selected?.current_stage === 'chairman';
+  const canDepartmentHeadAction = isDepartmentHead;
+  const canCcOfficerAction = isCcOfficer;
+  const canSecretaryAction = isSecretary;
+  const canChairmanAction = isChairman;
 
   const updateComplaint = async (status, forward_to = null) => {
     if (!selected) return;
@@ -290,14 +292,6 @@ function Complaints() {
     if (f === 'resolved') return isSinhala ? 'විසඳන ලදී' : 'Resolved';
     if (f === 'closed') return isSinhala ? 'වසා ඇත' : 'Closed';
     return f;
-  };
-
-  const getSignatureForRole = (roleName) => {
-    const foundReply = replies.find(r => {
-      const rRole = String(r.users?.roles?.role_name || '').toLowerCase();
-      return rRole.includes(roleName.toLowerCase()) && r.users?.signature_url;
-    });
-    return foundReply?.users?.signature_url || null;
   };
 
   return (
@@ -486,7 +480,7 @@ function Complaints() {
 
             <div style={{ marginBottom: '24px' }}>
               <div style={{ fontSize: '15px', fontWeight: 700, marginBottom: '8px', textDecoration: 'underline' }}>
-                विषය / Subject: {getLocalizedText(selected, 'title')}
+                විෂය / Subject: {getLocalizedText(selected, 'title')}
               </div>
               <div style={{ fontSize: '14px', lineHeight: '1.6', color: '#334155', whiteSpace: 'pre-wrap', backgroundColor: '#fff', padding: '12px', borderLeft: '4px solid #8B0000' }}>
                 {getLocalizedText(selected, 'description')}
@@ -528,55 +522,6 @@ function Complaints() {
                   ))}
                 </div>
               )}
-            </div>
-
-            <div style={{ marginBottom: '24px' }}>
-              <h4 style={{ fontSize: '15px', borderBottom: '1px solid #e2e8f0', paddingBottom: '8px', color: '#0f172a', marginBottom: '14px' }}>
-                {tr('official_signatures', 'නිල අත්සන් (Official Signatures)')}
-              </h4>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px' }}>
-                
-                {(selected.current_stage === 'department_head' || replies.some(r => r.users?.roles?.role_name === 'Department Head') || getSignatureForRole('Department Head')) && (
-                  <SignatureCard 
-                    title={tr('department_head', 'Department Head')} 
-                    positionKey="Department Head" 
-                    image={getSignatureForRole('Department Head')} 
-                    lang={activeLanguage} 
-                    t={t} 
-                  />
-                )}
-
-                {(selected.current_stage === 'cc_officer' || selected.current_stage === 'secretary' || selected.current_stage === 'chairman' || getSignatureForRole('CC Officer')) && (
-                  <SignatureCard 
-                    title={tr('cc_officer', 'CC Officer')} 
-                    positionKey="cc_officer" 
-                    image={getSignatureForRole('CC Officer')} 
-                    lang={activeLanguage} 
-                    t={t} 
-                  />
-                )}
-
-                {(selected.current_stage === 'secretary' || selected.current_stage === 'chairman' || getSignatureForRole('Secretary')) && (
-                  <SignatureCard 
-                    title={tr('secretary', 'Secretary')} 
-                    positionKey="secretary" 
-                    image={getSignatureForRole('Secretary')} 
-                    lang={activeLanguage} 
-                    t={t} 
-                  />
-                )}
-
-                {(selected.current_stage === 'chairman' || getSignatureForRole('Chairman')) && (
-                  <SignatureCard 
-                    title={tr('chairman', 'Chairman')} 
-                    positionKey="chairman" 
-                    image={getSignatureForRole('Chairman')} 
-                    lang={activeLanguage} 
-                    t={t} 
-                  />
-                )}
-
-              </div>
             </div>
 
             <div className="field" style={{ marginBottom: '20px' }}>
