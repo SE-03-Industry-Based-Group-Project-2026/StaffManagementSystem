@@ -1,7 +1,7 @@
 // app/mainLayout.tsx
 
-import React, { useState } from 'react';
-import { StyleSheet, View, Alert, StatusBar } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, View, Alert, StatusBar, BackHandler, PanResponder } from 'react-native';
 
 import LoginScreen from './screens/LoginScreen';
 import DashboardScreen from './screens/DashboardScreen';
@@ -11,14 +11,33 @@ import LeaveBalanceScreen from './screens/LeaveBalanceScreen';
 import ApplyLeaveScreen from './screens/ApplyLeaveScreen';
 import LeaveStatusScreen from './screens/LeaveStatusScreen';
 import DigitalFormScreen from './screens/DigitalFormScreen';
+import MedicalFormScreen from './screens/MedicalFormScreen'; 
 import SignatureScreen from './screens/SignatureScreen';
 import ComplaintSubmitScreen from './screens/ComplaintSubmitScreen';
-import ComplaintStatusScreen from './screens/ComplaintStatusScreen';
+import TestA4Screen from './screens/TestA4Screen';
+
+// 🔥 අලුතින් හදපු පැමිණිලි පිටු දෙක මෙතනින් Import කරලා තියෙන්නේ
+import ComplaintListScreen from './screens/ComplaintListScreen';
+import ComplaintDetailsScreen from './screens/ComplaintDetailsScreen';
+
 import AnnouncementsScreen from './screens/AnnouncementsScreen';
 import NotificationsScreen from './screens/NotificationsScreen';
+import NotificationNavigationBridge from './NotificationNavigationBridge';
+import TaskAllocationScreen from './screens/TaskAllocationScreen';
+import TaskDetailsScreen from './screens/TaskDetailsScreen';
+import ForgotPasswordScreen from './screens/ForgotPasswordScreen';
+import ResetPasswordScreen from './screens/ResetPasswordScreen'; 
 
 interface MainLayoutProps { selectedLang: 'si' | 'en' | 'ta'; onResetLang: () => void; }
-type ScreenKey = 'Login' | 'Dashboard' | 'Profile' | 'EditProfile' | 'LeaveBalance' | 'ApplyLeave' | 'LeaveStatus' | 'DigitalForm' | 'Signature' | 'ComplaintSubmit' | 'ComplaintStatus' | 'Announcements' | 'Notifications';
+
+// 🔥 ScreenKey එකට 'ComplaintList' සහ 'ComplaintDetails' එකතු කළා
+type ScreenKey = 'Login' | 'Dashboard' | 'Profile' | 'EditProfile' | 'LeaveBalance' | 'ApplyLeave' | 'LeaveStatus' | 'DigitalForm' | 'MedicalForm' | 'Signature' | 'ComplaintSubmit' | 'ComplaintStatus' | 'Announcements' | 'Notifications'| 'TaskAllocation' | 'TestA4'
+| 'TaskDetails' | 'ComplaintList' | 'ComplaintDetails'| 'forgot' | 'reset';
+
+type Route = {
+  screen: ScreenKey;
+  params?: any;
+};
 
 const translations = {
   si: { loginTitle: "ප්‍රාදේශීය සභා සේවක කළමනාකරණය", govSub: "රාජ්‍ය සේවා ජංගම පද්ධතිය", epfLabel: "සේවක අර්ථසාධක අරමුදල් අංකය", passLabel: "මුරපදය", loginBtn: "පද්ධතියට ඇතුළු වන්න", welcome: "ආයුබෝවන්", dept: "පෙරපාසල් සහ පුස්තකාල අංශය (ප්‍රජා සංවර්ධන)", menu1: "නිවාඩු කළමනාකරණය", menu2: "පැමිණිලි ඉදිරිපත් කිරීම", menu3: "දැනුම්දීම් සහ නිවේදන", menu4: "මගේ පැතිකඩ", profileTitle: "මගේ තොරතුරු", role: "පුස්තකාල සහකාර", editProfile: "පැතිකඩ සංස්කරණය", updateBtn: "තොරතුරු යාවත්කාලීන කරන්න", saveBtn: "වෙනස්කම් සුරකින්න", phoneLabel: "දුරකථන අංකය", casual: "අනියම් නිවාඩු", medical: "වෛද්‍ය නිවාඩු", duty: "රාජකාරිමය නිවාඩු", newLeave: "නව නිවාඩු ඉල්ලීමක් සිදුකරන්න", leaveStatus: "කලින් දැමූ ඉල්ලීම්වල වත්මන් තත්ත්වය", reason: "නිවාඩුව ලබා ගැනීමට හේතුව", submit: "ඉල්ලීම ඉදිරිපත් කරන්න", digitalForm: "නිල ඩිජිටල් නිවාඩු පෝරමය", signBtn: "ඩිජිටල් අත්සන තැබීමට යන්න", signDesc: "කරුණාකර ඔබගේ සම්පූර්ණ නම මෙහි සටහන් කර අත්සන තහවුරු කරන්න.", complaintLabel: "පැමිණිල්ලේ විස්තරය", replied: "පිළිතුරු ලබා දී ඇත", notiTitle: "දැනුම්දීම්", changeLang: "← භාෂාව වෙනස් කරන්න" },
@@ -27,52 +46,327 @@ const translations = {
 };
 
 export default function MainLayout({ selectedLang, onResetLang }: MainLayoutProps) {
-  const [currentScreen, setCurrentScreen] = useState<ScreenKey>('Login');
+  // Real in-app navigation stack. Back returns to the actual previous route
+  // instead of always jumping to Dashboard.
+  const navigationStackRef = useRef<Route[]>([{ screen: 'Login' }]);
+  const [navigationStack, setNavigationStack] = useState<Route[]>([
+    { screen: 'Login' },
+  ]);
+
+  const currentRoute = navigationStack[navigationStack.length - 1];
+  const currentScreen = currentRoute?.screen ?? 'Login';
+  const screenParams = currentRoute?.params ?? {};
+
+  const goBackRef = useRef<() => boolean>(() => false);
+
   const t = translations[selectedLang];
+
+  const handleGoBack = () => {
+    const stack = navigationStackRef.current;
+
+    if (stack.length > 1) {
+      const nextStack = stack.slice(0, -1);
+      navigationStackRef.current = nextStack;
+      setNavigationStack(nextStack);
+      return true;
+    }
+
+    if (stack[0]?.screen === 'Login') {
+      const title =
+        selectedLang === 'si'
+          ? 'ඉවත්වන්න'
+          : selectedLang === 'ta'
+            ? 'வெளியேறு'
+            : 'Exit App';
+
+      const msg =
+        selectedLang === 'si'
+          ? 'ඔබට යෙදුමෙන් ඉවත් වීමට අවශ්‍යද?'
+          : selectedLang === 'ta'
+            ? 'நீங்கள் பயன்பாட்டிலிருந்து வெளியேற விரும்புகிறீர்களா?'
+            : 'Do you want to exit the app?';
+
+      const no =
+        selectedLang === 'si'
+          ? 'නැත'
+          : selectedLang === 'ta'
+            ? 'இல்லை'
+            : 'No';
+
+      const yes =
+        selectedLang === 'si'
+          ? 'ඔව්'
+          : selectedLang === 'ta'
+            ? 'ஆம்'
+            : 'Yes';
+
+      Alert.alert(title, msg, [
+        { text: no, style: 'cancel' },
+        { text: yes, onPress: () => BackHandler.exitApp() },
+      ]);
+
+      return true;
+    }
+
+    return false;
+  };
+
+  goBackRef.current = handleGoBack;
+
+  const edgeSwipeResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponderCapture: (evt) =>
+        evt.nativeEvent.pageX < 35,
+
+      onMoveShouldSetPanResponderCapture: (evt, gestureState) =>
+        evt.nativeEvent.pageX < 35 && gestureState.dx > 10,
+
+      onPanResponderRelease: (_evt, gestureState) => {
+        if (gestureState.dx > 50) {
+          goBackRef.current();
+        }
+      },
+    })
+  ).current;
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => goBackRef.current()
+    );
+
+    return () => backHandler.remove();
+  }, []);
+
+  const replaceCurrentRoute = (screen: Route['screen'], params?: any) => {
+    const stack = navigationStackRef.current;
+    const nextRoute: Route = {
+      screen,
+      params: params || {},
+    };
+
+    const nextStack =
+      stack.length > 0
+        ? [...stack.slice(0, -1), nextRoute]
+        : [nextRoute];
+
+    navigationStackRef.current = nextStack;
+    setNavigationStack(nextStack);
+  };
+
+  const handleNavigate = (screen: string, params?: any) => {
+    const nextRoute: Route = {
+      screen: screen as Route['screen'],
+      params: params || {},
+    };
+
+    const stack = navigationStackRef.current;
+    const current = stack[stack.length - 1];
+
+    if (
+      current?.screen === nextRoute.screen &&
+      JSON.stringify(current?.params || {}) ===
+        JSON.stringify(nextRoute.params || {})
+    ) {
+      return;
+    }
+
+    const nextStack = [...stack, nextRoute];
+    navigationStackRef.current = nextStack;
+    setNavigationStack(nextStack);
+  };
 
   const handleSystemLogout = () => {
     Alert.alert(
-      selectedLang === 'si' ? "පද්ධතියෙන් ඉවත් වීම තහවුරු කරන්න" : "Confirm Logout",
-      selectedLang === 'si' ? "ඔබට මෙම පද්ධතියෙන් ආරක්ෂිතව ඉවත් වීමට අවශ්‍යද?" : "Are you sure you want to log out?",
+      selectedLang === 'si'
+        ? 'පද්ධතියෙන් ඉවත් වීම තහවුරු කරන්න'
+        : selectedLang === 'ta'
+          ? 'வெளியேறுவதை உறுதிப்படுத்தவும்'
+          : 'Confirm Logout',
+      selectedLang === 'si'
+        ? 'ඔබට මෙම පද්ධතියෙන් ආරක්ෂිතව ඉවත් වීමට අවශ්‍යද?'
+        : selectedLang === 'ta'
+          ? 'இந்த அமைப்பிலிருந்து நீங்கள் பாதுகாப்பாக வெளியேற விரும்புகிறீர்களா?'
+          : 'Are you sure you want to log out?',
       [
-        { text: selectedLang === 'si' ? "අවලංගු කරන්න" : "Cancel", style: "cancel" },
-        { text: selectedLang === 'si' ? "ඉවත් වන්න" : "Logout", style: "destructive", onPress: () => setCurrentScreen('Login') }
+        {
+          text:
+            selectedLang === 'si'
+              ? 'අවලංගු කරන්න'
+              : selectedLang === 'ta'
+                ? 'ரத்து செய்'
+                : 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text:
+            selectedLang === 'si'
+              ? 'ඉවත් වන්න'
+              : selectedLang === 'ta'
+                ? 'வெளியேறு'
+                : 'Logout',
+          style: 'destructive',
+          onPress: () => {
+            const loginRoute: Route = { screen: 'Login', params: {} };
+            navigationStackRef.current = [loginRoute];
+            setNavigationStack([loginRoute]);
+          },
+        },
       ]
     );
   };
+const isDarkScreen =
+    currentScreen === 'Login' ||
+    currentScreen === 'Dashboard' ||
+    currentScreen === 'LeaveBalance' ||
+    currentScreen === 'forgot' || 
+    currentScreen === 'reset';
 
-  // Dynamic conditions based on active screens
-  const isDarkScreen = currentScreen === 'Login' || currentScreen === 'LeaveBalance' || currentScreen === 'Dashboard';
-  
-  // Set consistent header coloring for Dashboard too
-  const statusBarColor = 
-    currentScreen === 'Login' ? '#800020' : 
-    (currentScreen === 'LeaveBalance' || currentScreen === 'Dashboard' ? '#7A1020' : 'transparent');
-    
-  const appBgColor = currentScreen === 'Login' ? '#800020' : '#F8F9FA';
+  const statusBarColor =
+    (currentScreen === 'Login' || currentScreen === 'forgot' || currentScreen === 'reset')
+      ? '#800020'
+      : currentScreen === 'Dashboard' || currentScreen === 'LeaveBalance'
+        ? '#7A1020'
+        : 'transparent';
+
+  const appBgColor = (currentScreen === 'Login' || currentScreen === 'forgot' || currentScreen === 'reset') ? '#800020' : '#F8F9FA';
 
   return (
-    <View style={{ flex: 1, backgroundColor: appBgColor }}>
+    <View style={{ flex: 1, backgroundColor: appBgColor }} {...edgeSwipeResponder.panHandlers}>
+      <NotificationNavigationBridge onNavigate={handleNavigate} />
       <StatusBar 
         backgroundColor={statusBarColor} 
         barStyle={isDarkScreen ? "light-content" : "dark-content"} 
-        translucent={currentScreen !== 'Login' && currentScreen !== 'LeaveBalance' && currentScreen !== 'Dashboard'} 
+        translucent={currentScreen !== 'Login' && currentScreen !== 'LeaveBalance' && currentScreen !== 'Dashboard' && currentScreen !== 'forgot' && currentScreen !== 'reset'} 
       />
       
-      {/* Screen Router View Switch */}
-      {currentScreen === 'Login' && <LoginScreen t={t} onLogin={() => setCurrentScreen('Dashboard')} onBack={onResetLang} selectedLang={selectedLang} />}      
-      {currentScreen === 'Dashboard' && <DashboardScreen selectedLang={selectedLang} onNavigate={setCurrentScreen} onLogout={handleSystemLogout} />}
-      {currentScreen === 'Profile' && <ProfileScreen t={t} onNavigate={setCurrentScreen} onLogout={handleSystemLogout} />}
-      {currentScreen === 'EditProfile' && <EditProfileScreen t={t} onBack={() => setCurrentScreen('Profile')} />}
-      {currentScreen === 'LeaveBalance' && <LeaveBalanceScreen selectedLang={selectedLang} onNavigate={(screen: string) => setCurrentScreen(screen as ScreenKey)} onBack={() => setCurrentScreen('Dashboard')} />}
-      {currentScreen === 'ApplyLeave' && <ApplyLeaveScreen t={t} onSubmit={() => setCurrentScreen('LeaveStatus')} selectedLang={selectedLang} />}
-      {currentScreen === 'LeaveStatus' && <LeaveStatusScreen t={t} onNavigate={setCurrentScreen} selectedLang={selectedLang} />}
-      {currentScreen === 'DigitalForm' && <DigitalFormScreen t={t} onNavigate={setCurrentScreen} selectedLang={selectedLang} />}
-      {currentScreen === 'Signature' && <SignatureScreen t={t} onComplete={() => setCurrentScreen('Dashboard')} selectedLang={selectedLang} />}
-      {currentScreen === 'ComplaintSubmit' && <ComplaintSubmitScreen t={t} onSubmit={() => setCurrentScreen('ComplaintStatus')} selectedLang={selectedLang} />}
-      {currentScreen === 'ComplaintStatus' && <ComplaintStatusScreen t={t} selectedLang={selectedLang} />}
-      {currentScreen === 'Announcements' && <AnnouncementsScreen t={t} selectedLang={selectedLang} />}
-      {currentScreen === 'Notifications' && <NotificationsScreen selectedLang={selectedLang} />}
+      {currentScreen === 'TestA4' && <TestA4Screen />}
+
+      {/* 🔥 අර උඩින් අයින් කරපු Screens දෙක මෙන්න මෙතනට දැම්මා */}
+      {currentScreen === 'forgot' && (
+        <ForgotPasswordScreen
+          selectedLang={selectedLang}
+          onBack={handleGoBack}
+          onSuccess={() => {
+            const loginRoute: Route = { screen: 'Login', params: {} };
+            navigationStackRef.current = [loginRoute];
+            setNavigationStack([loginRoute]);
+          }}
+        />
+      )}
+
+      {currentScreen === 'reset' && (
+        <ResetPasswordScreen
+          email={screenParams?.email || ''}
+          selectedLang={selectedLang}
+          onBack={handleGoBack}
+          onSuccess={() => {
+            const loginRoute: Route = { screen: 'Login', params: {} };
+            navigationStackRef.current = [loginRoute];
+            setNavigationStack([loginRoute]);
+          }}
+        />
+      )}
+  
+
+
+
+
+      {currentScreen === 'Login' && (
+        <LoginScreen
+          t={t}
+          onLogin={() => {
+            const dashboardRoute: Route = {
+              screen: 'Dashboard',
+              params: {},
+            };
+            navigationStackRef.current = [dashboardRoute];
+            setNavigationStack([dashboardRoute]);
+          }}
+          onBack={onResetLang}
+          onForgot={() => handleNavigate('forgot')}
+          selectedLang={selectedLang}
+        />
+      )}
+{currentScreen === 'Dashboard' && <DashboardScreen selectedLang={selectedLang} onNavigate={handleNavigate} onLogout={handleSystemLogout} />}
+      {currentScreen === 'Profile' && <ProfileScreen t={t} onNavigate={handleNavigate} onLogout={handleSystemLogout} />}
+      {currentScreen === 'EditProfile' && <EditProfileScreen t={t} onBack={handleGoBack} />}
+      {currentScreen === 'LeaveBalance' && <LeaveBalanceScreen selectedLang={selectedLang} onNavigate={handleNavigate} onBack={handleGoBack} />}
+      {currentScreen === 'ApplyLeave' && (
+        <ApplyLeaveScreen
+          t={t}
+          onSubmit={(leaveData?: any) =>
+            handleNavigate('LeaveStatus', leaveData || {})
+          }
+          selectedLang={selectedLang}
+        />
+      )}
+
+      
+      {currentScreen === 'LeaveStatus' && <LeaveStatusScreen t={t} onNavigate={handleNavigate} selectedLang={selectedLang} />}
+      {currentScreen === 'DigitalForm' && <DigitalFormScreen t={t} onNavigate={handleNavigate} onBack={handleGoBack} selectedLang={selectedLang} route={{ params: screenParams }} />}
+      {currentScreen === 'MedicalForm' && <MedicalFormScreen t={t} onNavigate={handleNavigate} onBack={handleGoBack} selectedLang={selectedLang} route={{ params: screenParams }} />}
+      {currentScreen === 'Signature' && <SignatureScreen t={t} onComplete={() => replaceCurrentRoute('Dashboard')} selectedLang={selectedLang} />}
+      {currentScreen === 'ComplaintSubmit' && (
+        <ComplaintSubmitScreen
+          t={t}
+          selectedLang={selectedLang}
+          onNavigate={handleNavigate}
+          onBack={handleGoBack}
+          route={{ params: screenParams }}
+        />
+      )}    
+
+      {currentScreen === 'ComplaintList' && (
+        <ComplaintListScreen
+          selectedLang={selectedLang}
+          onNavigate={handleNavigate}
+          onBack={handleGoBack}
+        />
+      )}
+      
+      {(currentScreen === 'ComplaintDetails' || currentScreen === 'ComplaintStatus') && (
+        <ComplaintDetailsScreen
+          selectedLang={selectedLang}
+          onNavigate={handleNavigate}
+          onBack={handleGoBack}
+          route={{ 
+            params: { 
+              complaintId: screenParams?.complaintId || screenParams?.id || screenParams?.related_id 
+            } 
+          }}
+        />
+      )}
+
+      {currentScreen === 'Announcements' && (
+        <AnnouncementsScreen
+          selectedLang={selectedLang}
+          onBack={handleGoBack}
+          route={{ params: screenParams }}
+        />
+      )}
+      {currentScreen === 'Notifications' && (
+        <NotificationsScreen
+          selectedLang={selectedLang}
+          onNavigate={handleNavigate}
+          onBack={handleGoBack}
+        />
+      )}
+      {currentScreen === 'TaskAllocation' && (
+        <TaskAllocationScreen
+          selectedLang={selectedLang}
+          onNavigate={handleNavigate}
+          onBack={handleGoBack}
+          route={{ params: screenParams }}
+        />
+      )}
+      {currentScreen === 'TaskDetails' && (
+        <TaskDetailsScreen
+          selectedLang={selectedLang}
+          onBack={handleGoBack}
+          route={{ params: screenParams }}
+        />
+      )}
     </View>
   );
 }

@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "staff-management-app",
+    "name": "Staff Management",
     "slug": "staff-management-app",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/ui/icon.jpg",
     "scheme": "staffmanagementapp",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -17,11 +17,16 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.dew79.staffmanagementapptrialvirsion1"
     },
     "web": {
+      "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "display": "standalone",
+      "themeColor": "#7A1020",
+      "shortName": "Staff App",
+      "name": "Staff Management System"
     },
     "plugins": [
       "expo-router",
@@ -34,11 +39,19 @@
             "imageWidth": 76
           }
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "e26b190e-451f-4f2a-876b-39b4479bcbed"
+      }
     }
   }
 }
